@@ -62,7 +62,7 @@ body:not(.cockpit) #mission{bottom:274px}
 </style></head><body>
 <div id="hud" class="p"></div>
 <canvas id="flightPanel" width="1536" height="525" aria-label="Instrumentos de voo"></canvas>
-<div id="help" class="p"><b>Controles</b><br>↑ ↓ profundor (↑ picar, ↓ cabrar)<br>← → aileron<br>A D leme e roda do nariz<br>W S motor (PgUp/PgDn também)<br>F V flaps<br>Z X compensador<br>B freio, P freio de estacionamento<br>C câmera, R reiniciar, H ocultar ajuda<br>Q liga/desliga sombras<br>Mouse: arrastar olha em volta, roda dá zoom<br><b>Decolagem:</b> solte o freio (P), motor a 100% e puxe ↓ aos 55 kt<br><b>Estol:</b> reduza o ângulo de ataque (pique suavemente); não force curva enquanto recuperar.<br><b>Desafio:</b> atravesse os portões verdes e saia pelo lado vermelho</div>
+<div id="help" class="p"><b>Controles</b><br>↑ ↓ profundor (↑ picar, ↓ cabrar)<br>← → aileron<br>A D leme e roda do nariz<br>W S motor (PgUp/PgDn também)<br>F V flaps<br>Z X compensador<br>B freio, P freio de estacionamento<br>C câmera, R reiniciar, H ocultar ajuda<br>Q liga/desliga sombras<br>Mouse: arrastar olha em volta, roda dá zoom (muito perto entra na cabine, muito longe sai)<br><b>Decolagem:</b> solte o freio (P), motor a 100% e puxe ↓ aos 55 kt<br><b>Estol:</b> reduza o ângulo de ataque (pique suavemente); não force curva enquanto recuperar.<br><b>Desafio:</b> atravesse os portões verdes e saia pelo lado vermelho</div>
 <div id="msg" class="p"></div>
 <div id="stallAlert" role="alert" aria-live="assertive" hidden>ESTOL IMINENTE — REDUZA O ÂNGULO DE ATAQUE</div>
 <div id="gamebar" class="p"><span>SALDO</span><strong id="money">M$ 0,00</strong><button id="shopBtn">Hangar e upgrades</button></div>
@@ -718,7 +718,7 @@ function yoke(){const g=new T.Group();cy(.018,.018,.38,0,0,-.19,CH,g,'z');cy(.03
 const YK=yoke(),YK2=yoke();YK.position.set(-.3,0,-.45);YK2.position.set(.3,0,-.45);CK.add(YK,YK2);
 function pedals(xs){const g=new T.Group();xs.forEach(x=>{const p=bx(.1,.11,.015,x,0,0,PLD,g);p.rotation.x=-.25;bx(.1,.04,.02,x,.06,.025,RB,g);cy(.01,.01,.3,x,-.02,.14,DK,g,'z',8)});g.position.set(0,-.3,-.62);CK.add(g);return g}
 const PL=pedals([-.4,.2]),PRg=pedals([-.2,.4]);
-const MODEL_EYE=new T.Vector3(-.22,.44,-1.58),LEGACY_EYE=new T.Vector3(-.3,.66,.12);
+const MODEL_EYE=new T.Vector3(-.22,.62,-1.58),LEGACY_EYE=new T.Vector3(-.3,.78,.12);
 CK.traverse(o=>{if(o.isMesh)o.receiveShadow=true});
 
 // sombras: tudo projeta, exceto a pele (o casco fechado "hull" projeta por ela) e o interior
@@ -972,6 +972,12 @@ function inf(){const f=new T.Vector3(0,0,-1).applyQuaternion(Qt),r=new T.Vector3
 
 // ================= entrada =================
 const K={};let ly=0,lp=0,zm=1,dn=0,ac,eo,eg,hn;
+function setView(inside,resetZoom){
+ if(!(cessnaResourcesLoaded||cessnaModelFailed))return;
+ cockpit=inside;
+ ly=cockpit&&cessnaModelLoaded?-.2:0;
+ lp=cockpit&&cessnaModelLoaded?-.04:0;
+ if(resetZoom)zm=1}
 function au(){if(ac){if(ac.state==='suspended')ac.resume();return}if(!window.AudioContext){console.warn('Web Audio não está disponível neste navegador.');return}
  try{const ctx=new AudioContext(),osc=ctx.createOscillator(),gain=ctx.createGain(),filter=ctx.createBiquadFilter(),alarm=ctx.createOscillator(),alarmGain=ctx.createGain();
   osc.type='sawtooth';gain.gain.value=0;filter.frequency.value=380;osc.connect(filter);filter.connect(gain);gain.connect(ctx.destination);osc.start();
@@ -979,13 +985,17 @@ function au(){if(ac){if(ac.state==='suspended')ac.resume();return}if(!window.Aud
   ac=ctx;eo=osc;eg=gain;hn=alarm;hn.g=alarmGain}catch(error){console.warn('Não foi possível iniciar o áudio do simulador.',error)}}
 addEventListener('keydown',e=>{if(e.code==='Escape'&&shop.style.display==='block'){openShop(false);return}if(shop.style.display==='block')return;
  K[e.code]=1;if(e.code.startsWith('Arrow'))e.preventDefault();if(!e.repeat){const c=e.code;
- if(c=='KeyC'&&(cessnaResourcesLoaded||cessnaModelFailed)){cockpit=!cockpit;ly=cockpit&&cessnaModelLoaded?-.2:0;lp=cockpit&&cessnaModelLoaded?-.15:0}if(c=='KeyR')reset();if(c=='KeyH')hp.style.display=hp.style.display=='none'?'':'none';if(c=='KeyQ')sun.castShadow=!sun.castShadow;
+ if(c=='KeyC')setView(!cockpit);if(c=='KeyR')reset();if(c=='KeyH')hp.style.display=hp.style.display=='none'?'':'none';if(c=='KeyQ')sun.castShadow=!sun.castShadow;
  if(c=='KeyF')ct.fl=Math.min(30,ct.fl+10);if(c=='KeyV')ct.fl=Math.max(0,ct.fl-10);if(c=='KeyP')ct.pk=1-ct.pk}au()});
 addEventListener('keyup',e=>K[e.code]=0);
 addEventListener('blur',()=>{dn=0;for(const code in K)K[code]=0});
 addEventListener('mousedown',e=>{if(shop.contains(e.target))return;dn=1;au()});addEventListener('mouseup',()=>dn=0);
 addEventListener('mousemove',e=>{if(dn){ly-=e.movementX*.0038;lp=clamp(lp-e.movementY*.0038,-1.2,1.2)}});
-addEventListener('wheel',e=>{zm=clamp(zm+e.deltaY*.001,.5,2.5)});
+addEventListener('wheel',e=>{
+ const next=zm+e.deltaY*.001,zmOut=cockpit?1.12:2.5;
+ if(!cockpit&&next<.5){setView(true,true);return}
+ if(cockpit&&next>zmOut){setView(false,true);return}
+ zm=clamp(next,.5,zmOut)});
 function ctl(dt){const mv=(k,t,r)=>ct[k]+=clamp(t-ct[k],-r*dt,r*dt);
  mv('e',(K.ArrowDown?1:0)-(K.ArrowUp?1:0),.68);mv('a',(K.ArrowRight?1:0)-(K.ArrowLeft?1:0),.68);mv('r',(K.KeyD?1:0)-(K.KeyA?1:0),.78);
  ct.th=clamp(ct.th+((K.KeyW||K.PageUp?1:0)-(K.KeyS||K.PageDown?1:0))*.3*dt,0,1);
