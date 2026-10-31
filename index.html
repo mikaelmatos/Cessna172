@@ -13,16 +13,26 @@ body>canvas{position:fixed;inset:0}
 .poi i{font-style:normal;flex:none;width:24px;height:24px;border-radius:50%;border:2px solid #fff;box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1;box-shadow:0 2px 6px rgba(0,0,0,.45)}
 .poi span{padding:4px 7px;border-radius:6px;background:rgba(8,16,28,.78);box-shadow:0 2px 6px rgba(0,0,0,.35)}
 .p{position:fixed;background:rgba(8,16,28,.76);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);padding:8px 12px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.2);z-index:2}
-#hud{left:10px;top:calc(150px + env(safe-area-inset-top,0px));white-space:pre}
+#hud{left:10px;top:calc(var(--gb-bottom,150px) + 8px);white-space:pre}
 #help{right:10px;top:calc(10px + env(safe-area-inset-top,0px));max-width:300px}
 #msg{left:50%;top:40%;transform:translateX(-50%);font-size:20px;display:none;text-align:center}
 #stallAlert{position:fixed;left:50%;top:calc(12px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:4;padding:9px 14px;border:1px solid #ff8a80;border-radius:8px;background:rgba(95,12,12,.92);color:#fff;font-weight:700;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.4)}
 #stallAlert[hidden]{display:none}
-#gamebar{left:10px;top:calc(10px + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:7px;max-width:calc(100vw - 20px)}
-#gbRow,.tpr{display:flex;align-items:center;gap:10px}
-.tpr span{flex:0 0 66px}
-.tpr select,.tpr input{flex:1;min-width:0;font:inherit;color:#fff;background:#1a2532;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:6px}
+#gamebar{left:10px;top:calc(10px + env(safe-area-inset-top,0px));box-sizing:border-box;width:min(480px,calc(100vw - 20px));display:grid;grid-template-columns:var(--lc,66px) minmax(0,1fr) var(--rc,96px);gap:7px 10px;align-items:center}
+#gbRow,.tpr{display:contents}
+#gbRow>span,.tpr>span{white-space:nowrap;min-width:0}
+.tpr select,.tpr input{width:100%;box-sizing:border-box;min-width:0;font:inherit;color:#fff;background:#1a2532;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:6px}
 #gamebar strong{color:#ffd56a;font-size:14px}
+.gbMid{display:flex;align-items:center;gap:10px;min-width:0}
+.gbMid strong{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#gamebar .rb{width:100%;box-sizing:border-box;white-space:nowrap;padding:7px 6px}
+#gamebar .sq{flex:0 0 34px;padding:7px 0}
+#gamebar .lblBtn{font-weight:700;color:#fff;background:none;border:0;border-radius:4px;padding:0;text-align:left;white-space:nowrap}
+#gamebar button.off{background:#373d48;border-color:#747d8b}
+#gamebar button:disabled{opacity:.4;cursor:default;filter:none}
+#gpsRange{text-align:center}
+#gpsCv{grid-column:1/-1;display:block;box-sizing:border-box;width:100%;height:clamp(150px,27vh,214px);border:1px solid rgba(255,255,255,.2);border-radius:8px;background:#07131f;touch-action:none}
+body.gps-off #gpsCv,body.gps-off #gpsCtl{display:none}
 button{font:inherit;color:#fff;background:linear-gradient(135deg,#237c62,#155541);border:1px solid #6be0ac;border-radius:7px;padding:7px 11px;cursor:pointer}
 button:hover{filter:brightness(1.15)}
 #shop{display:none;left:50%;top:50%;transform:translate(-50%,-50%);width:min(860px,calc(100vw - 28px));max-height:88vh;overflow:auto;padding:20px;background:rgba(8,16,28,.96);border-color:rgba(180,210,235,.24);box-shadow:0 24px 80px rgba(0,0,0,.55)}
@@ -62,7 +72,8 @@ button:hover{filter:brightness(1.15)}
 body.cockpit #flightPanel{display:none}
 body.cessna-interior #hud{display:none}
 body:not(.cockpit) #hud{display:none}
-@media(max-width:700px){#help{max-width:190px;font-size:10px;top:calc(160px + env(safe-area-inset-top,0px))}#gamebar{font-size:11px}#gbRow,.tpr{gap:6px}#gamebar button{padding:5px 7px}#hud{font-size:10px;top:calc(160px + env(safe-area-inset-top,0px))}#mission{font-size:10px}}
+@media(max-width:820px) and (min-width:701px){#help{top:calc(var(--gb-bottom,160px) + 8px)}}
+@media(max-width:700px){#help{max-width:190px;font-size:10px;top:calc(var(--gb-bottom,160px) + 8px)}#gamebar{font-size:11px;--lc:56px;--rc:80px;gap:6px}#gamebar button{padding:5px 7px}#gamebar .rb{padding:5px 4px}#gamebar .sq{padding:5px 0}#gamebar .gbMid{gap:6px}#gamebar .xl{display:none}#hud{font-size:10px}#mission{font-size:10px}}
 body:not(.cockpit) #mission{bottom:274px}
 @media(max-width:700px){body:not(.cockpit) #mission{bottom:264px}}
 @media(max-width:560px){#shop{padding:14px}#shopHead{align-items:flex-start}#shopTitleArea{align-items:flex-start;flex-direction:column;gap:5px}#shopBalance{padding:4px 8px}#shopItems{grid-template-columns:1fr}}
@@ -79,12 +90,15 @@ body:not(.cockpit) #mission{bottom:274px}
 </style></head><body>
 <div id="hud" class="p"></div>
 <canvas id="flightPanel" width="1536" height="525" aria-label="Instrumentos de voo"></canvas>
-<div id="help" class="p"><b>Controles</b><br>↑ ↓ profundor (↑ picar, ↓ cabrar)<br>← → aileron<br>A D leme e roda do nariz<br>W S motor (PgUp/PgDn também)<br>F V flaps<br>Z X compensador<br>B freio, P freio de estacionamento<br>C câmera, R reiniciar, H ocultar ajuda<br>Q liga/desliga sombras<br>Mouse: arrastar olha em volta, roda dá zoom (muito perto entra na cabine, muito longe sai)<br><b>Decolagem:</b> solte o freio (P), motor a 100% e puxe ↓ aos 55 kt<br><b>Estol:</b> reduza o ângulo de ataque (pique suavemente); não force curva enquanto recuperar.<br><b>Desafio:</b> atravesse os portões verdes e saia pelo lado vermelho<br><b>Mapa:</b> botão "Mapa" troca a fonte (Esri, EOX Sentinel-2, NASA, Google) e liga/desliga os prédios 3D. <b>Cuidado:</b> prédios são sólidos.</div>
+<div id="help" class="p"><b>Controles</b><br>↑ ↓ profundor (↑ picar, ↓ cabrar)<br>← → aileron<br>A D leme e roda do nariz<br>W S motor (PgUp/PgDn também)<br>F V flaps<br>Z X compensador<br>B freio, P freio de estacionamento<br>C câmera, R reiniciar, H ocultar ajuda, G mostrar/ocultar o GPS<br>Q liga/desliga sombras<br>Mouse: arrastar olha em volta, roda dá zoom (muito perto entra na cabine, muito longe sai)<br><b>Decolagem:</b> solte o freio (P), motor a 100% e puxe ↓ aos 55 kt<br><b>Estol:</b> reduza o ângulo de ataque (pique suavemente); não force curva enquanto recuperar.<br><b>Desafio:</b> atravesse os portões verdes e saia pelo lado vermelho<br><b>Mapa:</b> botão "Mapa" troca a fonte (Esri, EOX Sentinel-2, NASA, Google) e liga/desliga os prédios 3D. <b>Cuidado:</b> prédios são sólidos.<br><b>GPS:</b> mostra latitude/longitude reais, GS, rumo magnético, altitude, aeroporto mais próximo e "Direto para" (escolha o destino na lista). A roda do mouse sobre o mapa muda o alcance.</div>
 <div id="msg" class="p"></div>
 <div id="stallAlert" role="alert" aria-live="assertive" hidden>ESTOL IMINENTE — REDUZA O ÂNGULO DE ATAQUE</div>
-<div id="gamebar" class="p"><div id="gbRow"><span>SALDO</span><strong id="money">M$ 0,00</strong><button id="shopBtn">Hangar e upgrades</button><button id="mapBtn">Mapa</button></div>
- <div class="tpr"><span>CAPITAL</span><select id="tpCity" aria-label="Capital (começa na pista)"></select><button id="tpGo" title="Começa na pista do aeroporto">Decolar</button></div>
- <div class="tpr"><span>CIDADE</span><input id="tpText" type="text" placeholder="Digite uma cidade…" autocomplete="off" aria-label="Cidade para sobrevoar"><button id="tpFind" title="Começa sobrevoando a cidade">Sobrevoar</button></div></div>
+<div id="gamebar" class="p"><div id="gbRow"><span>SALDO</span><div class="gbMid"><strong id="money">M$ 0,00</strong><button id="shopBtn">Hangar<span class="xl"> e upgrades</span></button></div><button id="mapBtn" class="rb">Mapa</button></div>
+ <div class="tpr"><span>CAPITAL</span><select id="tpCity" aria-label="Capital (começa na pista)"></select><button id="tpGo" class="rb" title="Começa na pista do aeroporto">Decolar</button></div>
+ <div class="tpr"><span>CIDADE</span><input id="tpText" type="text" placeholder="Digite uma cidade…" autocomplete="off" aria-label="Cidade para sobrevoar"><button id="tpFind" class="rb" title="Começa sobrevoando a cidade">Sobrevoar</button></div>
+ <div class="tpr" id="gpsRow"><button id="gpsToggle" class="lblBtn" type="button" title="Mostrar ou ocultar o GPS (tecla G)" aria-expanded="true">GPS ▾</button><select id="gpsDest" aria-label="GPS: ir direto para um aeroporto"></select><button id="gpsClear" class="rb" type="button" title="Cancelar o destino">Limpar</button></div>
+ <canvas id="gpsCv" role="img" aria-label="GPS com mapa móvel e dados de navegação"></canvas>
+ <div class="tpr" id="gpsCtl"><span>ALCANCE</span><div class="gbMid"><button id="gpsZout" class="sq" type="button" title="Afastar (aumenta o alcance)">−</button><strong id="gpsRange">10 NM</strong><button id="gpsZin" class="sq" type="button" title="Aproximar (diminui o alcance)">+</button><button id="gpsImg" type="button" title="Liga ou desliga a imagem de satélite no mapa">Imagem</button></div><button id="gpsOri" class="rb" type="button" title="Alterna entre norte para cima e trilha para cima">Trilha ↑</button></div></div>
 <div id="mission">Portão 1/3 · voe pelo centro do arco verde → vermelho</div>
 <div id="deathScreen" aria-live="assertive" aria-hidden="true"><div id="deathCard"><strong>VOCÊ MORREU</strong><span>Pressione R para reiniciar</span></div></div>
 <div id="mapLoading" class="p">Carregando mapa…</div>
@@ -1594,6 +1608,113 @@ async function flyOverCity(text){text=text.trim();if(!text||tpPending)return;tpP
 $('tpGo').addEventListener('click',()=>{teleportAirport(AIRPORTS[+tpCity.value]);tpCity.blur()});
 $('tpFind').addEventListener('click',()=>{flyOverCity(tpText.value);tpText.blur()});
 tpText.addEventListener('keydown',e=>{if(e.key==='Enter'){flyOverCity(tpText.value);tpText.blur()}});
+/*GPS-INICIO*/
+// ================= GPS: mapa móvel e navegação com a posição real do avião =================
+// A posição do avião no mundo local (x = leste, z = -norte) é convertida em latitude/longitude pela mesma projeção do terreno.
+// O mapa reaproveita as imagens de satélite que o terreno já baixou; aeroportos, pista ativa e próximo portão vêm do próprio jogo.
+const GPS_KEY='cessna172-gps-v1',GPS_RANGES=[.5,1,2,5,10,20,50,100,200,500],GPS_FONT='ui-monospace,Menlo,Consolas,monospace';
+let gpsSaved={};try{gpsSaved=JSON.parse(localStorage.getItem(GPS_KEY)||'{}')||{}}catch(error){console.warn('Configuração do GPS inválida; usando o padrão.',error)}
+const gps={open:typeof gpsSaved.open==='boolean'?gpsSaved.open:!matchMedia('(max-width:700px)').matches,north:gpsSaved.north===true,img:gpsSaved.img!==false,
+ ri:Number.isInteger(gpsSaved.ri)?clamp(gpsSaved.ri,0,GPS_RANGES.length-1):4,dest:null,last:0,wheelT:0,w:0,h:0,dpr:1,cv:$('gpsCv')};
+gps.cx=gps.cv.getContext('2d');
+const gpsFwd=new T.Vector3(),gpsDest=$('gpsDest'),gbEl=$('gamebar');
+// mundo local -> latitude/longitude (graus decimais); MX0/MY0/KS acompanham o teletransporte, então vale em qualquer lugar do planeta
+const gpsLL=(x,z)=>{const mx=MX0+x/KS,my=MY0-z/KS;return{lat:(2*Math.atan(Math.exp(my/EARTH))-PI/2)/D,lon:((mx/EARTH/D+540)%360+360)%360-180}};
+const gpsHav=(a1,o1,a2,o2)=>{const p1=a1*D,p2=a2*D,s=Math.sin((p2-p1)/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin((o2-o1)*D/2)**2;return 2*6371009*Math.asin(Math.min(1,Math.sqrt(s)))}; // metros
+const gpsBrg=(a1,o1,a2,o2)=>{const p1=a1*D,p2=a2*D,dl=(o2-o1)*D;return(Math.atan2(Math.sin(dl)*Math.cos(p2),Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl))/D+360)%360}; // rumo verdadeiro
+const gpsPad=(n,w)=>String(n).padStart(w,'0'),gpsNM=v=>v<1?v.toFixed(1):String(v),gpsDist=nm=>nm>=10000?'>9999':nm>=100?String(Math.round(nm)):nm.toFixed(1);
+function gpsDM(v,pos,neg,w){const h=v<0?neg:pos;v=Math.abs(v);let d=Math.floor(v),mi=(v-d)*60;if(mi>=59.995){d++;mi=0}return`${h} ${gpsPad(d,w)}°${gpsPad(mi.toFixed(2),5)}'`}
+function gpsSave(){try{localStorage.setItem(GPS_KEY,JSON.stringify({open:gps.open,north:gps.north,img:gps.img,ri:gps.ri}))}catch(error){console.warn('Não foi possível salvar a configuração do GPS.',error)}}
+function gpsResize(){const w=gps.cv.clientWidth,h=gps.cv.clientHeight,dpr=Math.min(window.devicePixelRatio||1,2);if(!w||!h)return;
+ if(w===gps.w&&h===gps.h&&dpr===gps.dpr)return;gps.w=w;gps.h=h;gps.dpr=dpr;gps.cv.width=Math.round(w*dpr);gps.cv.height=Math.round(h*dpr);gps.last=0}
+function gpsSync(){document.body.classList.toggle('gps-off',!gps.open);const tg=$('gpsToggle');tg.textContent=gps.open?'GPS ▾':'GPS ▸';tg.setAttribute('aria-expanded',String(gps.open));
+ $('gpsRange').textContent=gpsNM(GPS_RANGES[gps.ri])+' NM';$('gpsOri').textContent=gps.north?'Norte ↑':'Trilha ↑';$('gpsImg').classList.toggle('off',!gps.img);
+ $('gpsZin').disabled=gps.ri<=0;$('gpsZout').disabled=gps.ri>=GPS_RANGES.length-1;gpsResize();gps.last=0}
+function gpsKeyToggle(){gps.open=!gps.open;gpsSave();gpsSync()}
+const gpsHit=(id,fn)=>$(id).addEventListener('click',e=>{fn();e.currentTarget.blur();gpsSave();gpsSync()});
+gpsHit('gpsToggle',()=>{gps.open=!gps.open});
+gpsHit('gpsZin',()=>{gps.ri=clamp(gps.ri-1,0,GPS_RANGES.length-1)});
+gpsHit('gpsZout',()=>{gps.ri=clamp(gps.ri+1,0,GPS_RANGES.length-1)});
+gpsHit('gpsImg',()=>{gps.img=!gps.img});
+gpsHit('gpsOri',()=>{gps.north=!gps.north});
+{const o=document.createElement('option');o.value='';o.textContent='Direto para… (nenhum)';gpsDest.append(o);
+ AIRPORTS.forEach((a,i)=>{const op=document.createElement('option');op.value=i;op.textContent=`${a.n} · ${a.icao}`;gpsDest.append(op)})}
+gpsDest.addEventListener('change',()=>{gps.dest=gpsDest.value===''?null:AIRPORTS[+gpsDest.value];gpsDest.blur();gps.last=0});
+$('gpsClear').addEventListener('click',e=>{gps.dest=null;gpsDest.value='';e.currentTarget.blur();gps.last=0});
+// a roda sobre o mapa muda o alcance (e não o zoom da câmera)
+gps.cv.addEventListener('wheel',e=>{e.preventDefault();e.stopPropagation();const t=performance.now();if(t-gps.wheelT<110)return;gps.wheelT=t;
+ gps.ri=clamp(gps.ri+(e.deltaY>0?1:-1),0,GPS_RANGES.length-1);gpsSave();gpsSync()},{passive:false});
+// altura da barra -> posição do HUD antigo e da ajuda em telas estreitas (ficam logo abaixo da barra)
+function gbSync(){document.documentElement.style.setProperty('--gb-bottom',Math.ceil(gbEl.getBoundingClientRect().bottom)+'px')}
+if(window.ResizeObserver){new ResizeObserver(gbSync).observe(gbEl);new ResizeObserver(gpsResize).observe(gps.cv)}
+addEventListener('resize',()=>{gbSync();gpsResize()});gpsSync();gbSync();
+function gpsText(c,s,x,y,font,col,al,halo){c.font=font;c.textAlign=al||'left';c.textBaseline='alphabetic';
+ if(halo){c.lineWidth=3;c.lineJoin='round';c.strokeStyle='rgba(2,10,18,.85)';c.strokeText(s,x,y)}
+ c.fillStyle=col;c.fillText(s,x,y)}
+function gpsNearest(ll){let best=AIRPORTS[0],bd=1e18;for(const a of AIRPORTS){const d=gpsHav(ll.lat,ll.lon,a.lat,a.lon);if(d<bd){bd=d;best=a}}return best}
+function gpsDraw(){
+ const c=gps.cx,W=gps.w,H=gps.h;if(!W||!H)return;
+ const f=gpsFwd.set(0,0,-1).applyQuaternion(Qt),gsMs=Math.hypot(V.x,V.z),gs=gsMs*1.94384,hdgT=Math.atan2(f.x,-f.z)/D,
+  trkT=((gsMs>1?Math.atan2(V.x,-V.z)/D:hdgT)+360)%360,ll=gpsLL(P.x,P.z),alt=P.y*3.28084,vs=V.y*196.85,mag=v=>((v+RW.magW)%360+360)%360,
+  TOP=30,BOT=38,mh=Math.max(30,H-TOP-BOT),north=gps.north,cx0=W/2,cy0=TOP+mh*(north?.5:.6),rOut=Math.min(mh*.46,W*.46),
+  range=GPS_RANGES[gps.ri],ppm=rOut/(range*1852),rot=north?0:-trkT*D,ca=Math.cos(rot),sa=Math.sin(rot),
+  scr=(x,z)=>{const dx=(x-P.x)*ppm,dz=(z-P.z)*ppm;return[cx0+dx*ca-dz*sa,cy0+dx*sa+dz*ca]},
+  inMap=p=>p[0]>-24&&p[0]<W+24&&p[1]>TOP-24&&p[1]<TOP+mh+24,dest=gps.dest,tgt=dest||gpsNearest(ll);
+ c.setTransform(gps.dpr,0,0,gps.dpr,0,0);c.clearRect(0,0,W,H);c.fillStyle='#07131f';c.fillRect(0,0,W,H);
+ // ---------- mapa (recortado na sua área)
+ c.save();c.beginPath();c.rect(0,TOP,W,mh);c.clip();c.fillStyle='#0d2233';c.fillRect(0,TOP,W,mh);
+ if(gps.img){ // imagens de satélite já carregadas, das mais grossas para as mais finas
+  const rad=Math.hypot(Math.max(cx0,W-cx0),Math.max(cy0-TOP,TOP+mh-cy0))/ppm+50,list=[];
+  for(const e of imgCache.values())if(e.state==='ready'&&e.tex&&e.tex.image)list.push(e);
+  list.sort((p,q)=>p.z-q.z);
+  c.save();c.translate(cx0,cy0);c.rotate(rot);c.scale(ppm,ppm);c.translate(-P.x,-P.z);const ov=.7/ppm;
+  for(const e of list){const x0=tileX(e.z,e.x),x1=tileX(e.z,e.x+1),z0=tileZ(e.z,e.y),z1=tileZ(e.z,e.y+1);
+   if(x1<P.x-rad||x0>P.x+rad||z1<P.z-rad||z0>P.z+rad)continue;
+   try{c.drawImage(e.tex.image,x0-ov,z0-ov,x1-x0+2*ov,z1-z0+2*ov)}catch(error){}}
+  c.restore();c.fillStyle='rgba(4,12,20,.4)';c.fillRect(0,TOP,W,mh)}
+ // anéis de alcance e rosa dos ventos (norte verdadeiro do mapa)
+ c.lineWidth=1;c.strokeStyle='rgba(190,225,255,.55)';c.lineCap='butt';
+ for(const k of[1,.5]){c.beginPath();c.arc(cx0,cy0,rOut*k,0,2*PI);c.stroke()}
+ for(let d=0;d<360;d+=10){const a=d*D+rot,s=Math.sin(a),co=-Math.cos(a),l=d%90===0?9:d%30===0?6:3.5;
+  c.beginPath();c.moveTo(cx0+s*rOut,cy0+co*rOut);c.lineTo(cx0+s*(rOut-l),cy0+co*(rOut-l));c.stroke()}
+ for(const [t,d,col] of [['N',0,'#ff7a6b'],['E',90,'#fff'],['S',180,'#fff'],['W',270,'#fff']]){const a=d*D+rot,rl=rOut-16;
+  gpsText(c,t,cx0+Math.sin(a)*rl,cy0-Math.cos(a)*rl+4,`bold 10px ${GPS_FONT}`,col,'center',true)}
+ for(const k of[1,.5])gpsText(c,gpsNM(range*k),cx0-rOut*k*Math.SQRT1_2-3,cy0-rOut*k*Math.SQRT1_2-3,`9px ${GPS_FONT}`,'#cfe8f7','right',true);
+ // pista ativa (a que está na origem do mundo)
+ if(hasRW){const a=apt(0,-RW.len/2),b=apt(0,RW.len/2),pa=scr(a.x,a.z),pb=scr(b.x,b.z);
+  c.strokeStyle='rgba(255,255,255,.88)';c.lineWidth=Math.max(2,RW.wid*ppm);c.beginPath();c.moveTo(pa[0],pa[1]);c.lineTo(pb[0],pb[1]);c.stroke()}
+ // rota direta até o destino
+ if(dest){const p=scr(lonX(dest.lon),latZ(dest.lat));c.strokeStyle='#ff4df0';c.lineWidth=2.5;c.beginPath();c.moveTo(cx0,cy0);c.lineTo(p[0],p[1]);c.stroke()}
+ // próximo portão do desafio
+ if(checkpoint<gates.length){const gp=gates[checkpoint].position,p=scr(gp.x,gp.z);
+  if(inMap(p)){c.strokeStyle='#00ff78';c.lineWidth=2;c.beginPath();c.arc(p[0],p[1],6,0,2*PI);c.stroke();
+   gpsText(c,'P'+(checkpoint+1),p[0]+9,p[1]+4,`bold 10px ${GPS_FONT}`,'#7effb5',null,true)}}
+ // aeroportos
+ for(const a of AIRPORTS){const p=scr(lonX(a.lon),latZ(a.lat));if(!inMap(p))continue;const isD=a===dest;
+  c.lineWidth=isD?2:1.4;c.strokeStyle=isD?'#ff4df0':'#7fe3ff';c.fillStyle='rgba(6,18,30,.85)';c.beginPath();c.arc(p[0],p[1],isD?6:4.5,0,2*PI);c.fill();c.stroke();
+  gpsText(c,a.icao,p[0]+8,p[1]+4,`bold 10px ${GPS_FONT}`,isD?'#ff8af5':'#c8f0ff',null,true)}
+ // vetor de trilha e o próprio avião
+ const ta=trkT*D+rot;c.setLineDash([5,4]);c.strokeStyle='rgba(255,255,255,.8)';c.lineWidth=1.4;c.beginPath();c.moveTo(cx0,cy0);c.lineTo(cx0+Math.sin(ta)*rOut,cy0-Math.cos(ta)*rOut);c.stroke();c.setLineDash([]);
+ c.save();c.translate(cx0,cy0);c.rotate(ta);c.beginPath();
+ c.moveTo(0,-10);c.lineTo(2,-4);c.lineTo(10,2);c.lineTo(10,4.5);c.lineTo(2,2.5);c.lineTo(1.6,7);c.lineTo(4.5,9);c.lineTo(4.5,10.5);c.lineTo(0,9.5);c.lineTo(-4.5,10.5);c.lineTo(-4.5,9);c.lineTo(-1.6,7);c.lineTo(-2,2.5);c.lineTo(-10,4.5);c.lineTo(-10,2);c.lineTo(-2,-4);c.closePath();
+ c.fillStyle='#fff';c.fill();c.lineWidth=1.4;c.strokeStyle='#07131f';c.stroke();c.restore();
+ c.restore();
+ // ---------- barra superior: GS, rumo magnético, altitude, razão de subida
+ const vr=Math.round(vs/10)*10,cells=[['GS KT',String(Math.round(gs))],['TRK MAG',gpsPad(Math.round(mag(trkT))%360,3)+'°'],['ALT FT',String(Math.round(alt))],['VS FPM',(vr<0?'−':'+')+Math.abs(vr)]];
+ c.fillStyle='#0b1b2b';c.fillRect(0,0,W,TOP);c.fillStyle='rgba(255,255,255,.14)';c.fillRect(0,TOP-1,W,1);for(let i=1;i<4;i++)c.fillRect(Math.round(i*W/4),4,1,TOP-9);
+ cells.forEach(([l,v],i)=>{const x=i*W/4+7;gpsText(c,l,x,10,`9px ${GPS_FONT}`,'#8fb3cc');gpsText(c,v,x,24,`bold 14px ${GPS_FONT}`,'#fff')});
+ // ---------- barra inferior: coordenadas e navegação
+ const by=H-BOT,dNM=gpsHav(ll.lat,ll.lon,tgt.lat,tgt.lon)/1852,brgT=gpsBrg(ll.lat,ll.lon,tgt.lat,tgt.lon),brg=gpsPad(Math.round(mag(brgT))%360,3);
+ c.fillStyle='#0b1b2b';c.fillRect(0,by,W,BOT);c.fillStyle='rgba(255,255,255,.14)';c.fillRect(0,by,W,1);
+ gpsText(c,`${gpsDM(ll.lat,'N','S',2)}  ${gpsDM(ll.lon,'E','W',3)}`,8,by+15,`bold 12px ${GPS_FONT}`,'#fff');
+ gpsText(c,north?'NORTE ↑':'TRILHA ↑',W-8,by+14,`9px ${GPS_FONT}`,'#8fb3cc','right');
+ if(dest){let ete='--';
+  if(gs>20){const vmg=gs*Math.cos((trkT-brgT)*D);if(vmg>10){const sec=Math.round(dNM/vmg*3600);ete=sec>=3600?`${Math.floor(sec/3600)}h${gpsPad(Math.floor(sec%3600/60),2)}m`:`${Math.floor(sec/60)}m${gpsPad(sec%60,2)}s`}}
+  gpsText(c,`→ ${dest.icao}  ${gpsDist(dNM)}NM  BRG ${brg}°  ${dNM<.4?'CHEGADA':'ETE '+ete}`,8,by+30,`bold 11px ${GPS_FONT}`,'#ff8af5')}
+ else gpsText(c,`PERTO ${tgt.icao}  ${gpsDist(dNM)}NM  BRG ${brg}°`,8,by+30,`bold 11px ${GPS_FONT}`,'#9fe8ff')}
+function updateGps(now){if(!gps.open||!gps.w||now-gps.last<80)return;gps.last=now;
+ try{gpsDraw()}catch(error){console.error('Falha ao desenhar o GPS:',error);gps.last=now+5000}}
+/*GPS-FIM*/
 // ================= entrada =================
 const K={};let ly=0,lp=0,zm=1,dn=0,ac,eo,eg,hn;
 function setView(inside,resetZoom){
@@ -1623,7 +1744,7 @@ function boom(speed){ // explosão: estrondo de ruído grave, pancada de subgrav
  catch(error){console.warn('Não foi possível tocar a explosão.',error)}}
 addEventListener('keydown',e=>{if(e.target&&(e.target.tagName==='SELECT'||e.target.tagName==='INPUT')&&e.code!=='Escape')return;if(e.code==='Escape'){if(shop.style.display==='block'){openShop(false);return}if(mapPanel.style.display==='block'){openMap(false);return}}if(shop.style.display==='block'||mapPanel.style.display==='block')return;
  K[e.code]=1;if(e.code.startsWith('Arrow'))e.preventDefault();if(!e.repeat){const c=e.code;
- if(c=='KeyC')setView(!cockpit);if(c=='KeyR')reset();if(c=='KeyH')hp.style.display=hp.style.display=='none'?'':'none';if(c=='KeyQ')sun.castShadow=!sun.castShadow;
+ if(c=='KeyC')setView(!cockpit);if(c=='KeyR')reset();if(c=='KeyG')gpsKeyToggle();if(c=='KeyH')hp.style.display=hp.style.display=='none'?'':'none';if(c=='KeyQ')sun.castShadow=!sun.castShadow;
  if(c=='KeyF')ct.fl=Math.min(30,ct.fl+10);if(c=='KeyV')ct.fl=Math.max(0,ct.fl-10);if(c=='KeyP')ct.pk=1-ct.pk}au()});
 addEventListener('keyup',e=>K[e.code]=0);
 addEventListener('blur',()=>{dn=0;for(const code in K)K[code]=0});
@@ -1684,7 +1805,7 @@ function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/
  if(fr%2==0){panel(d);if(cessnaModelLoaded)updateCockpitInstrumentDisplays();if(!cockpit)flightCtx.drawImage(pc,0,0)}
  if(fr++%8==0)hu.textContent=`IAS ${d.kt.toFixed(0).padStart(3)} kt   ALT ${d.ft.toFixed(0)} ft   VS ${d.vs.toFixed(0)} fpm\nHDG ${d.hdg.toFixed(0).padStart(3,'0')}°   PITCH ${d.pitch.toFixed(0)}°   AoA ${d.aoa.toFixed(1)}°\nBANK ${(d.bank/D).toFixed(0)}°   MOTOR ${d.rpm.toFixed(0)} RPM   FLAPS ${ct.fl}°\n${ct.pk?'FREIO DE ESTACION.':''}${I.warn?'\n⚠ ALARME DE STALL':''}${fuel<=0?'\n⚠ SEM COMBUSTÍVEL':''}`;
  if(ac){eo.frequency.value=35+ct.th*60;eg.gain.value=fuel>0&&!crashed?.05+.08*ct.th:0;hn.g.gain.value=I.warn&&!crashed?.03:0}
- updatePois(dt,alt*3.281);
+ updatePois(dt,alt*3.281);updateGps(now);
  ren.render(scn,cam)}
 reset();requestAnimationFrame(loop);
 </script></body></html>
