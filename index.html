@@ -32,7 +32,14 @@ body>canvas{position:fixed;inset:0}
 #gamebar button:disabled{opacity:.4;cursor:default;filter:none}
 #gpsRange{text-align:center}
 #gpsCv{grid-column:1/-1;display:block;box-sizing:border-box;width:100%;height:clamp(150px,27vh,214px);border:1px solid rgba(255,255,255,.2);border-radius:8px;background:#07131f;touch-action:none}
-body.gps-off #gpsCv,body.gps-off #gpsCtl{display:none}
+body.gps-off #gpsCv,body.gps-off #gpsCtl,body.gps-off #gpsSearch{display:none}
+#gpsBox{position:relative;min-width:0}
+#gpsSug{position:absolute;left:calc(-1*var(--lc,66px) - 8px);right:0;top:calc(100% + 3px);z-index:10;margin:0;padding:3px;list-style:none;max-height:min(260px,40vh);overflow:auto;background:#1a2532;border:1px solid rgba(255,255,255,.3);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.5)}
+#gpsSug[hidden]{display:none}
+#gpsSug li{padding:6px 8px;border-radius:5px;cursor:pointer;font-size:11px;line-height:1.35;overflow-wrap:anywhere}
+#gpsSug li.on,#gpsSug li:hover{background:rgba(107,224,172,.22)}
+#gpsSug li.msg{color:#9fb3c6;cursor:default}
+#gpsSug li.msg:hover{background:none}
 button{font:inherit;color:#fff;background:linear-gradient(135deg,#237c62,#155541);border:1px solid #6be0ac;border-radius:7px;padding:7px 11px;cursor:pointer}
 button:hover{filter:brightness(1.15)}
 #shop{display:none;left:50%;top:50%;transform:translate(-50%,-50%);width:min(860px,calc(100vw - 28px));max-height:88vh;overflow:auto;padding:20px;background:rgba(8,16,28,.96);border-color:rgba(180,210,235,.24);box-shadow:0 24px 80px rgba(0,0,0,.55)}
@@ -97,6 +104,7 @@ body:not(.cockpit) #mission{bottom:274px}
  <div class="tpr"><span>CAPITAL</span><select id="tpCity" aria-label="Capital (começa na pista)"></select><button id="tpGo" class="rb" title="Começa na pista do aeroporto">Decolar</button></div>
  <div class="tpr"><span>CIDADE</span><input id="tpText" type="text" placeholder="Digite uma cidade…" autocomplete="off" aria-label="Cidade para sobrevoar"><button id="tpFind" class="rb" title="Começa sobrevoando a cidade">Sobrevoar</button></div>
  <div class="tpr" id="gpsRow"><button id="gpsToggle" class="lblBtn" type="button" title="Mostrar ou ocultar o GPS (tecla G)" aria-expanded="true">GPS ▾</button><select id="gpsDest" aria-label="GPS: ir direto para um aeroporto"></select><button id="gpsClear" class="rb" type="button" title="Cancelar o destino">Limpar</button></div>
+ <div class="tpr" id="gpsSearch"><span>DESTINO</span><div id="gpsBox"><input id="gpsText" type="text" placeholder="Digite o destino (3+ letras)…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="GPS: digitar destino" aria-controls="gpsSug"><ul id="gpsSug" role="listbox" hidden></ul></div><button id="gpsGo" class="rb" type="button" title="Traçar rota até o destino digitado">Traçar</button></div>
  <canvas id="gpsCv" role="img" aria-label="GPS com mapa móvel e dados de navegação"></canvas>
  <div class="tpr" id="gpsCtl"><span>ALCANCE</span><div class="gbMid"><button id="gpsZout" class="sq" type="button" title="Afastar (aumenta o alcance)">−</button><strong id="gpsRange">10 NM</strong><button id="gpsZin" class="sq" type="button" title="Aproximar (diminui o alcance)">+</button><button id="gpsImg" type="button" title="Liga ou desliga a imagem de satélite no mapa">Imagem</button></div><button id="gpsOri" class="rb" type="button" title="Alterna entre norte para cima e trilha para cima">Trilha ↑</button></div></div>
 <div id="mission">Portão 1/3 · voe pelo centro do arco verde → vermelho</div>
@@ -360,9 +368,28 @@ const bTex=(()=>{const c=document.createElement('canvas');c.width=c.height=128;c
  const t=new T.CanvasTexture(c);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(1/3,1/3.2);t.anisotropy=8;t.encoding=T.sRGBEncoding;return t})();
 const BCELL=.01,bCells=new Map(),bGroup=new T.Group(),bMat=new T.MeshLambertMaterial({vertexColors:true,map:bTex,side:T.DoubleSide});scn.add(bGroup);
 const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass.private.coffee/api/interpreter'];
+// Fila única para o Overpass: o servidor público dá ~2 slots por IP (acima disso responde 429) e o slot fica preso enquanto a consulta roda.
+// Por isso: no máximo OVP_MAX consultas simultâneas (prédios + locais juntos) e, quando um servidor recusa/atrasa, ele descansa antes de ser usado de novo.
+const OVP_MAX=2,ovpEp=OVERPASS.map(()=>({until:0,fails:0}));let ovpRun=0,ovpRR=0;const ovpWait=[];
+const ovpSlot=()=>new Promise(res=>{if(ovpRun<OVP_MAX){ovpRun++;res()}else ovpWait.push(res)});
+const ovpFree=()=>{const n=ovpWait.shift();if(n)n();else ovpRun--};
+async function ovpFetch(q){await ovpSlot();let lastErr=null;
+ try{for(let a=0;a<4;a++){
+   const now=performance.now();let best=-1;
+   for(let n=0;n<OVERPASS.length;n++){const i=(ovpRR+n)%OVERPASS.length;if(ovpEp[i].until<=now){best=i;break}}
+   if(best<0){const soon=Math.min(...ovpEp.map(e=>e.until));if(soon-now>20000)throw lastErr||new Error('Overpass ocupado (429)');await new Promise(r=>setTimeout(r,soon-now+50));continue}
+   ovpRR=best+1;const ep=ovpEp[best],ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),45000);
+   try{const r=await fetch(OVERPASS[best],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl.signal});
+    if(r.status===429||r.status>=500){ep.fails++;ep.until=performance.now()+Math.min(60000,10000*ep.fails);throw new Error('HTTP '+r.status)}
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const txt=await r.text();ep.fails=0;return txt}
+   catch(error){lastErr=error;if(ep.until<=performance.now()){ep.fails++;ep.until=performance.now()+Math.min(30000,5000*ep.fails)}}
+   finally{clearTimeout(tm)}}
+  throw lastErr||new Error('Overpass indisponível')}
+ finally{ovpFree()}}
 const lonX=lon=>(lon*D*EARTH-MX0)*KS,latZ=lat=>(MY0-Math.log(Math.tan(PI/4+lat*D/2))*EARTH)*KS;
 let bEnabled=mapCfg.bld,bTotal=0,bActive=0,bEp=0,bTimer=0,bErr=0,bLoaded=0;
-const BLOAD_MAX=14000,BLOAD_MIN=7500,BDROP=17000,BMAXACT=6,BMAXQ=20,BBLK=2;let bRad=11000,bSm=.016;const bBlocks=new Map();
+const BLOAD_MAX=14000,BLOAD_MIN=7500,BDROP=17000,BMAXACT=3,BMAXQ=20,BBLK=2;let bRad=11000,bSm=.016;const bBlocks=new Map();
 const BPAL=[[.84,.82,.78],[.76,.79,.84],[.88,.84,.74],[.72,.72,.74],[.92,.9,.86],[.8,.74,.68],[.9,.78,.7]];
 function bCell(i,j){const k=i+':'+j;let c=bCells.get(k);if(!c){c={k,i,j,state:'new',els:null,idx:0,pos:[],nor:[],col:[],uv:[],boxes:[],retry:0,d:1e9,mesh:null,count:0,dead:false,
  x0:lonX(i*BCELL),x1:lonX((i+1)*BCELL),z0:latZ((j+1)*BCELL),z1:latZ(j*BCELL)};bCells.set(k,c)}return c}
@@ -395,15 +422,8 @@ async function fetchBlock(bk){bk.state='loading';bActive++;
   j=await osmLoad('b2/'+bk.i+'_'+bk.j,bCache,bKey(bk));
   if(!j){
    const q=`[out:json][timeout:40];way["building"](${(bk.j*BBLK*BCELL).toFixed(5)},${(bk.i*BBLK*BCELL).toFixed(5)},${((bk.j+1)*BBLK*BCELL).toFixed(5)},${((bk.i+1)*BBLK*BCELL).toFixed(5)});out geom qt;`;
-   // failover imediato: se um servidor estiver lento ou falhar, tenta o próximo sem esperar o ciclo de retentativa
-   let txt=null,lastErr=null;
-   for(let k=0;k<2&&txt===null;k++){
-    const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),k?30000:14000);
-    try{const r=await fetch(OVERPASS[(bEp+bRR++)%OVERPASS.length],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl.signal});
-     if(!r.ok)throw new Error('HTTP '+r.status);txt=await r.text();j=JSON.parse(txt);if(!Array.isArray(j.elements)||(j.remark&&/error|timed out|out of memory/i.test(j.remark)))throw new Error('Overpass: resposta incompleta')}
-    catch(error){lastErr=error;txt=null;j=null}
-    finally{clearTimeout(tm)}}
-   if(txt===null)throw lastErr||new Error('Overpass indisponível');
+   const txt=await ovpFetch(q);j=JSON.parse(txt);
+   if(!Array.isArray(j.elements)||(j.remark&&/error|timed out|out of memory/i.test(j.remark)))throw new Error('Overpass: resposta incompleta');
    if(j&&Array.isArray(j.elements))osmDB.put('b2/'+bk.i+'_'+bk.j,txt)}
   const data=new Map(),i0=bk.i*BBLK,j0=bk.j*BBLK;
   for(const e of j.elements||[]){if(e.type!=='way'||!e.geometry||e.geometry.length<4)continue;
@@ -411,7 +431,7 @@ async function fetchBlock(bk){bk.state='loading';bActive++;
    const ci=clamp(Math.floor(sl/BCELL),i0,i0+BBLK-1),cj=clamp(Math.floor(sa/BCELL),j0,j0+BBLK-1),k=ci+':'+cj;let a=data.get(k);if(!a){a=[];data.set(k,a)}a.push(e)}
   bk.data=data;bk.state='ready';bErr=0;
   for(const c of bCells.values())if(c.blk===bk&&c.state==='loading'&&!c.dead)assignCell(c,bk)}
- catch(error){bEp++;bErr++;bk.state='error';bk.retry=performance.now()+(bErr>3?20000:2500);
+ catch(error){bEp++;bErr++;bk.state='error';bk.retry=performance.now()+(bErr>3?20000:6000);
   for(const c of bCells.values())if(c.blk===bk&&c.state==='loading'){c.state='new';c.blk=null}
   console.warn('Overpass falhou (tentando outro servidor):',error)}
  finally{bActive--;bTimer=0}}
@@ -533,14 +553,8 @@ async function fetchPoiBlock(bk){bk.state='loading';poiActive++;
   if(!j){
    const bb=`${(bk.j*POI_BLK).toFixed(5)},${(bk.i*POI_BLK).toFixed(5)},${((bk.j+1)*POI_BLK).toFixed(5)},${((bk.i+1)*POI_BLK).toFixed(5)}`,
     q='[out:json][timeout:40];('+POI_SEL.map(s=>`nwr["name"]${s}(${bb});`).join('')+');out center tags qt;';
-   let txt=null,lastErr=null;
-   for(let k=0;k<2&&txt===null;k++){
-    const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),k?30000:14000);
-    try{const r=await fetch(OVERPASS[(poiEp+poiRR++)%OVERPASS.length],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl.signal});
-     if(!r.ok)throw new Error('HTTP '+r.status);txt=await r.text();j=JSON.parse(txt);if(!Array.isArray(j.elements)||(j.remark&&/error|timed out|out of memory/i.test(j.remark)))throw new Error('Overpass: resposta incompleta')}
-    catch(error){lastErr=error;txt=null;j=null}
-    finally{clearTimeout(tm)}}
-   if(txt===null)throw lastErr||new Error('Overpass indisponível');
+   const txt=await ovpFetch(q);j=JSON.parse(txt);
+   if(!Array.isArray(j.elements)||(j.remark&&/error|timed out|out of memory/i.test(j.remark)))throw new Error('Overpass: resposta incompleta');
    if(j&&Array.isArray(j.elements))osmDB.put('p1/'+bk.i+'_'+bk.j,txt)}
   const items=[],seen=new Set();
   for(const e of j.elements||[]){const t=e.tags;if(!t||!t.name)continue;
@@ -561,7 +575,7 @@ function poiLoad(){const now=performance.now(),myy=MY0-P.z/KS,lon=(MX0+P.x/KS)/E
    if(d>POI_RAD)continue;const k=i+':'+j;let bk=poiBlocks.get(k);if(!bk){bk={k,i,j,state:'idle',items:[],retry:0};poiBlocks.set(k,bk)}
    if(bk.state==='idle'||(bk.state==='error'&&now>bk.retry))want.push([d,bk])}
  want.sort((a,b)=>a[0]-b[0]);
- for(const [,bk] of want){if(poiActive>=2)break;fetchPoiBlock(bk)}
+ for(const [,bk] of want){if(poiActive>=1)break;fetchPoiBlock(bk)}
  for(const [k,bk] of poiBlocks){if(bk.state==='loading')continue;const bx=(bk.i+.5)*POI_BLK,bz=(bk.j+.5)*POI_BLK;if(Math.hypot((bx-lon)*mLon,(bz-lat)*mLat)>POI_RAD*5)poiBlocks.delete(k)}}
 // escolhe os candidatos: perto e (se o avião não olha pra baixo) à frente da câmera, ordenados por distância x importância
 function poiSelect(){const fw=new T.Vector3();cam.getWorldDirection(fw);const fl=Math.hypot(fw.x,fw.z),down=fl<.35,fx=fw.x/(fl||1),fz=fw.z/(fl||1),out=[];
@@ -1693,6 +1707,9 @@ function gpsDraw(){
  for(const a of AIRPORTS){const p=scr(lonX(a.lon),latZ(a.lat));if(!inMap(p))continue;const isD=a===dest;
   c.lineWidth=isD?2:1.4;c.strokeStyle=isD?'#ff4df0':'#7fe3ff';c.fillStyle='rgba(6,18,30,.85)';c.beginPath();c.arc(p[0],p[1],isD?6:4.5,0,2*PI);c.fill();c.stroke();
   gpsText(c,a.icao,p[0]+8,p[1]+4,`bold 10px ${GPS_FONT}`,isD?'#ff8af5':'#c8f0ff',null,true)}
+ // destino digitado (fora da lista de aeroportos)
+ if(dest&&dest.custom){const p=scr(lonX(dest.lon),latZ(dest.lat));if(inMap(p)){c.lineWidth=2;c.strokeStyle='#ff4df0';c.fillStyle='rgba(6,18,30,.85)';c.beginPath();c.arc(p[0],p[1],6,0,2*PI);c.fill();c.stroke();
+  c.fillStyle='#ff4df0';c.beginPath();c.arc(p[0],p[1],1.8,0,2*PI);c.fill();gpsText(c,dest.icao,p[0]+9,p[1]+4,`bold 10px ${GPS_FONT}`,'#ff8af5',null,true)}}
  // vetor de trilha e o próprio avião
  const ta=trkT*D+rot;c.setLineDash([5,4]);c.strokeStyle='rgba(255,255,255,.8)';c.lineWidth=1.4;c.beginPath();c.moveTo(cx0,cy0);c.lineTo(cx0+Math.sin(ta)*rOut,cy0-Math.cos(ta)*rOut);c.stroke();c.setLineDash([]);
  c.save();c.translate(cx0,cy0);c.rotate(ta);c.beginPath();
@@ -1714,6 +1731,51 @@ function gpsDraw(){
  else gpsText(c,`PERTO ${tgt.icao}  ${gpsDist(dNM)}NM  BRG ${brg}°`,8,by+30,`bold 11px ${GPS_FONT}`,'#9fe8ff')}
 function updateGps(now){if(!gps.open||!gps.w||now-gps.last<80)return;gps.last=now;
  try{gpsDraw()}catch(error){console.error('Falha ao desenhar o GPS:',error);gps.last=now+5000}}
+// ----- destino digitado: sugestões a partir de 3 letras (Photon/OSM, com Nominatim de reserva) -----
+const gpsTxt=$('gpsText'),gpsSug=$('gpsSug'),gpsNorm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+let gpsItems=[],gpsAct=-1,gpsMsg='',gpsTimer=0,gpsReq=0,gpsAbort=null;
+function gpsSugShow(msg=''){gpsMsg=msg;gpsSug.textContent='';
+ if(msg){const li=document.createElement('li');li.className='msg';li.textContent=msg;gpsSug.append(li)}
+ gpsItems.forEach((it,i)=>{const li=document.createElement('li');li.dataset.i=i;if(i===gpsAct)li.className='on';li.textContent=(it.apt?'✈ ':'⌖ ')+it.label;gpsSug.append(li)});
+ gpsSug.hidden=!msg&&!gpsItems.length;const on=gpsSug.querySelector('.on');if(on)on.scrollIntoView({block:'nearest'})}
+function gpsLocal(q){const n=gpsNorm(q);return AIRPORTS.filter(a=>gpsNorm(a.n+' '+a.icao).includes(n)).slice(0,3).map(a=>({apt:a,name:a.n,label:`${a.n} · ${a.icao}`,lat:a.lat,lon:a.lon}))}
+async function gpsRemote(q,sig){const out=[],ll=gpsLL(P.x,P.z);
+ try{const r=await fetch(`https://photon.komoot.io/api/?limit=6&lat=${ll.lat.toFixed(3)}&lon=${ll.lon.toFixed(3)}&q=${encodeURIComponent(q)}`,{signal:sig});
+  if(!r.ok)throw new Error('photon '+r.status);
+  for(const f of(await r.json()).features||[]){const p=f.properties||{},g=f.geometry&&f.geometry.coordinates;if(!g||!p.name)continue;
+   out.push({name:p.name,label:[p.name,p.city&&p.city!==p.name?p.city:'',p.state,p.country].filter(Boolean).join(', '),lat:g[1],lon:g[0]})}
+  return out}
+ catch(error){if(error.name==='AbortError')throw error;console.warn('Photon indisponível; usando Nominatim.',error)}
+ const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=6&accept-language=pt-BR&q='+encodeURIComponent(q),{signal:sig});
+ if(!r.ok)throw new Error('nominatim '+r.status);
+ for(const x of await r.json())out.push({name:x.name||x.display_name.split(',')[0],label:x.display_name.split(',').slice(0,3).join(',').trim(),lat:+x.lat,lon:+x.lon});
+ return out}
+async function gpsSearch(q){const id=++gpsReq;if(gpsAbort)gpsAbort.abort();gpsAbort=new AbortController();
+ gpsItems=gpsLocal(q);gpsAct=-1;gpsSugShow('Buscando…');
+ try{const rem=await gpsRemote(q,gpsAbort.signal);if(id!==gpsReq)return gpsItems;
+  const seen=new Set(gpsItems.map(i=>i.label));for(const it of rem)if(!seen.has(it.label)){seen.add(it.label);gpsItems.push(it)}
+  gpsSugShow(gpsItems.length?'':'Nenhum resultado')}
+ catch(error){if(error.name!=='AbortError'&&id===gpsReq){console.warn('Busca de destino falhou.',error);gpsSugShow(gpsItems.length?'':'Sem conexão com o serviço de busca')}}
+ return gpsItems}
+function gpsPick(it){if(!it)return;gps.dest=it.apt||{n:it.label,icao:it.name.toUpperCase().slice(0,12),lat:it.lat,lon:it.lon,custom:true};
+ gpsDest.value=it.apt?String(AIRPORTS.indexOf(it.apt)):'';gpsTxt.value=it.label;gpsItems=[];gpsAct=-1;gpsSug.hidden=true;gpsTxt.blur();gps.last=0}
+async function gpsGo(){const q=gpsTxt.value.trim();if(q.length<3)return;clearTimeout(gpsTimer);
+ if(gpsAct>=0&&gpsItems[gpsAct])return gpsPick(gpsItems[gpsAct]);
+ const items=gpsItems.length&&gpsMsg!=='Buscando…'?gpsItems:await gpsSearch(q);gpsPick(items[0])}
+gpsTxt.addEventListener('input',()=>{clearTimeout(gpsTimer);const q=gpsTxt.value.trim();
+ if(q.length<3){gpsReq++;if(gpsAbort)gpsAbort.abort();gpsItems=[];gpsAct=-1;gpsSug.hidden=true;return}
+ gpsItems=gpsLocal(q);gpsAct=-1;gpsSugShow('Buscando…');gpsTimer=setTimeout(()=>gpsSearch(q),400)});
+gpsTxt.addEventListener('keydown',e=>{if(e.isComposing)return;
+ if(e.code==='ArrowDown'||e.code==='ArrowUp'){const n=gpsItems.length;if(!n)return;e.preventDefault();const d=e.code==='ArrowDown'?1:-1;gpsAct=gpsAct<0?(d>0?0:n-1):(gpsAct+d+n)%n;gpsSugShow(gpsMsg)}
+ else if(e.code==='Enter'||e.code==='NumpadEnter'){e.preventDefault();gpsGo()}
+ else if(e.code==='Escape')gpsSug.hidden=true});
+gpsTxt.addEventListener('focus',()=>{if(gpsItems.length||gpsMsg)gpsSugShow(gpsMsg)});
+gpsSug.addEventListener('mousedown',e=>e.preventDefault());
+gpsSug.addEventListener('click',e=>{const li=e.target.closest('li[data-i]');if(li)gpsPick(gpsItems[+li.dataset.i])});
+document.addEventListener('mousedown',e=>{if(!e.target.closest('#gpsBox'))gpsSug.hidden=true});
+$('gpsGo').addEventListener('click',e=>{e.currentTarget.blur();gpsGo()});
+$('gpsClear').addEventListener('click',()=>{clearTimeout(gpsTimer);gpsReq++;gpsTxt.value='';gpsItems=[];gpsAct=-1;gpsSug.hidden=true});
+gpsDest.addEventListener('change',()=>{if(gpsDest.value!==''){gpsTxt.value='';gpsItems=[];gpsAct=-1;gpsSug.hidden=true}});
 /*GPS-FIM*/
 // ================= entrada =================
 const K={};let ly=0,lp=0,zm=1,dn=0,ac,eo,eg,hn;
