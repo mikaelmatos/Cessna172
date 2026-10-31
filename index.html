@@ -12,6 +12,8 @@ body>canvas{position:fixed;inset:0}
 #hud{left:10px;top:calc(10px + env(safe-area-inset-top,0px));white-space:pre}
 #help{right:10px;top:calc(10px + env(safe-area-inset-top,0px));max-width:300px}
 #msg{left:50%;top:40%;transform:translateX(-50%);font-size:20px;display:none;text-align:center}
+#stallAlert{position:fixed;left:50%;top:calc(12px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:4;padding:9px 14px;border:1px solid #ff8a80;border-radius:8px;background:rgba(95,12,12,.92);color:#fff;font-weight:700;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+#stallAlert[hidden]{display:none}
 #gamebar{left:10px;top:150px;display:flex;align-items:center;gap:10px}
 #gamebar strong{color:#ffd56a;font-size:14px}
 button{font:inherit;color:#fff;background:linear-gradient(135deg,#237c62,#155541);border:1px solid #6be0ac;border-radius:7px;padding:7px 11px;cursor:pointer}
@@ -59,8 +61,9 @@ body:not(.cockpit) #mission{bottom:274px}
 </style></head><body>
 <div id="hud" class="p"></div>
 <canvas id="flightPanel" width="1536" height="525" aria-label="Instrumentos de voo"></canvas>
-<div id="help" class="p"><b>Controles</b><br>↑ ↓ profundor (↑ picar, ↓ cabrar)<br>← → aileron<br>A D leme e roda do nariz<br>W S motor (PgUp/PgDn também)<br>F V flaps<br>Z X compensador<br>B freio, P freio de estacionamento<br>C câmera, R reiniciar, H ocultar ajuda<br>Q liga/desliga sombras<br>Mouse: arrastar olha em volta, roda dá zoom<br><b>Decolagem:</b> solte o freio (P), motor a 100% e puxe ↓ aos 55 kt<br><b>Desafio:</b> atravesse os portões verdes e saia pelo lado vermelho</div>
+<div id="help" class="p"><b>Controles</b><br>↑ ↓ profundor (↑ picar, ↓ cabrar)<br>← → aileron<br>A D leme e roda do nariz<br>W S motor (PgUp/PgDn também)<br>F V flaps<br>Z X compensador<br>B freio, P freio de estacionamento<br>C câmera, R reiniciar, H ocultar ajuda<br>Q liga/desliga sombras<br>Mouse: arrastar olha em volta, roda dá zoom<br><b>Decolagem:</b> solte o freio (P), motor a 100% e puxe ↓ aos 55 kt<br><b>Estol:</b> reduza o ângulo de ataque (pique suavemente); não force curva enquanto recuperar.<br><b>Desafio:</b> atravesse os portões verdes e saia pelo lado vermelho</div>
 <div id="msg" class="p"></div>
+<div id="stallAlert" role="alert" aria-live="assertive" hidden>ESTOL IMINENTE — REDUZA O ÂNGULO DE ATAQUE</div>
 <div id="gamebar" class="p"><span>SALDO</span><strong id="money">M$ 0,00</strong><button id="shopBtn">Hangar e upgrades</button></div>
 <div id="mission">Portão 1/3 · voe pelo centro do arco verde → vermelho</div>
 <div id="deathScreen" aria-live="assertive" aria-hidden="true"><div id="deathCard"><strong>VOCÊ MORREU</strong><span>Pressione R para reiniciar</span></div></div>
@@ -81,8 +84,10 @@ body:not(.cockpit) #mission{bottom:274px}
  <div id="shopItems"></div>
 </section>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 <script>
-const T=THREE,PI=Math.PI,D=PI/180,rn=Math.random,clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),$=i=>document.getElementById(i),hu=$('hud'),hp=$('help'),ms=$('msg');
+const T=THREE,PI=Math.PI,D=PI/180,rn=Math.random,clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),$=i=>document.getElementById(i),hu=$('hud'),hp=$('help'),ms=$('msg'),stallAlert=$('stallAlert');
 const ren=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance'});ren.setPixelRatio(Math.min(devicePixelRatio,2));
 ren.shadowMap.enabled=true;ren.shadowMap.type=T.PCFSoftShadowMap;document.body.prepend(ren.domElement);
 const scn=new T.Scene();scn.fog=new T.Fog(0xbcd6ec,4000,19000);
@@ -116,9 +121,44 @@ const gt=(()=>{const c=document.createElement('canvas');c.width=c.height=512;con
  for(let i=0;i<150;i++){const px=rn()*512,py=rn()*512,rx=8+rn()*24,ry=4+rn()*13,green=rn()>.43;x.fillStyle=green?`rgba(44,76,34,${.07+rn()*.12})`:`rgba(126,91,55,${.07+rn()*.12})`;x.beginPath();x.ellipse(px,py,rx,ry,rn()*PI,0,2*PI);x.fill()}
  for(let i=0;i<1500;i++){const px=rn()*512,py=rn()*512,light=rn()>.48;x.fillStyle=light?'rgba(195,183,142,.14)':'rgba(34,49,32,.19)';x.beginPath();x.ellipse(px,py,2+rn()*9,.7+rn()*2.6,rn()*PI,0,2*PI);x.fill()}
  for(let i=0;i<240;i++){const px=rn()*512,py=rn()*512;x.fillStyle=`rgba(44,40,34,${.16+rn()*.14})`;x.beginPath();x.ellipse(px,py,.7+rn()*1.5,.5+rn(),rn()*PI,0,2*PI);x.fill()}
- const t=new T.CanvasTexture(c);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(SZ/36,SZ/36);t.anisotropy=16;return t})();
+ const t=new T.CanvasTexture(c);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(SZ/4,SZ/4);t.anisotropy=16;return t})();
 const tg=new T.PlaneGeometry(SZ,SZ,NS,NS).rotateX(-PI/2),tp=tg.attributes.position,tc=new Float32Array(tp.count*3);tg.setAttribute('color',new T.BufferAttribute(tc,3));
-const tm=new T.Mesh(tg,new T.MeshLambertMaterial({vertexColors:true,map:gt}));tm.frustumCulled=false;tm.receiveShadow=true;scn.add(tm);
+const groundMaterial=new T.MeshLambertMaterial({vertexColors:true,map:gt});
+groundMaterial.onBeforeCompile=shader=>{
+ shader.vertexShader=shader.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vGroundWorldPosition;')
+  .replace('#include <begin_vertex>','#include <begin_vertex>\nvGroundWorldPosition=(modelMatrix*vec4(transformed,1.0)).xyz;');
+ shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`#ifdef USE_MAP
+vec4 texelColor=texture2D(map,vUv,-0.5);
+texelColor=mapTexelToLinear(texelColor);
+diffuseColor*=texelColor;
+#endif`);
+ shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>
+varying vec3 vGroundWorldPosition;
+float groundHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float groundNoise(vec2 p){vec2 cell=floor(p),blend=fract(p);blend=blend*blend*(3.0-2.0*blend);
+ return mix(mix(groundHash(cell),groundHash(cell+vec2(1.0,0.0)),blend.x),mix(groundHash(cell+vec2(0.0,1.0)),groundHash(cell+vec2(1.0,1.0)),blend.x),blend.y);}`)
+  .replace('#include <color_fragment>',`#include <color_fragment>
+vec2 runwayEdge=max(vec2(abs(vGroundWorldPosition.x)-15.0,abs(vGroundWorldPosition.z)-750.0),vec2(0.0));
+float runwayFade=1.0-smoothstep(8.0,105.0,length(runwayEdge));
+float sparsePatches=smoothstep(0.48,0.76,groundNoise(vGroundWorldPosition.xz/8.0));
+float bareGround=runwayFade*sparsePatches*0.68;
+diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.25,0.21,0.14),bareGround);`);
+};
+const tm=new T.Mesh(tg,groundMaterial);tm.frustumCulled=false;tm.receiveShadow=true;scn.add(tm);
+const grassPhotos=['grass-01.png','grass-02.png','grass-03.png','grass-04.png'];
+const grassLoader=new T.TextureLoader();
+Promise.all(grassPhotos.map(file=>new Promise((resolve,reject)=>grassLoader.load(`assets/grass/${file}`,resolve,undefined,reject))))
+ .then(textures=>{
+  const c=document.createElement('canvas');c.width=c.height=512;const x=c.getContext('2d',{willReadFrequently:true}),samples=[];
+  textures.forEach(texture=>{x.clearRect(0,0,512,512);x.drawImage(texture.image,0,0,512,512);samples.push(x.getImageData(0,0,512,512).data)});
+  const image=x.createImageData(512,512);
+  for(let i=0;i<image.data.length;i+=4){
+   for(let channel=0;channel<3;channel++){
+    const average=(samples[0][i+channel]+samples[1][i+channel]+samples[2][i+channel]+samples[3][i+channel])/4;
+    image.data[i+channel]=112+(average-112)*.72}
+   image.data[i+3]=255}
+  x.putImageData(image,0,0);gt.image=c;gt.needsUpdate=true;textures.forEach(texture=>texture.dispose())
+ }).catch(error=>console.error('Não foi possível carregar as texturas de grama:',error));
 let tcx=1e9,tcz=1e9;
 function upT(){const cx=Math.round(P.x/CE)*CE,cz=Math.round(P.z/CE)*CE;if(cx==tcx&&cz==tcz)return;tcx=cx;tcz=cz;tm.position.set(cx,0,cz);
  for(let i=0;i<tp.count;i++)tp.setY(i,Q(tp.getX(i)+cx,tp.getZ(i)+cz));
@@ -126,28 +166,53 @@ function upT(){const cx=Math.round(P.x/CE)*CE,cz=Math.round(P.z/CE)*CE;if(cx==tc
  for(let i=0;i<tp.count;i++){const x=tp.getX(i)+cx,z=tp.getZ(i)+cz,y=tp.getY(i),ny=nr.getY(i),f=vn(x/160,z/160),patch=vn(x/310+53,z/310-19),detail=vn(x/48-7,z/48+31);let r,g,b;
   if(y<.3){r=.09;g=.29;b=.48}else if(y<1.6){r=.74;g=.68;b=.5}else{
    const grass=[.16+.1*f,.34+.14*f,.09+.07*f],soil=[.31+.035*detail,.235+.025*detail,.12+.018*detail],rock=[.37+.035*detail,.35+.035*detail,.31+.03*detail];
-   const steep=clamp((.9-ny)*4,0,.78),high=clamp((y-240)/420,0,.58),stone=clamp(steep+high*.72,0,.88),bare=clamp((.42-patch)*1.6,0,.42)*(1-clamp((y-280)/320,0,1))*(1-stone),snow=clamp((y-790)/105,0,1),grassWeight=1-bare-stone;
+   const steep=clamp((.9-ny)*4,0,.78),high=clamp((y-240)/420,0,.58),stone=clamp(steep+high*.72,0,.88),bare=clamp((.42-patch)*1.6,0,.42)*(1-clamp((y-280)/320,0,1))*(1-stone),grassWeight=1-bare-stone;
    r=grass[0]*grassWeight+soil[0]*bare+rock[0]*stone;g=grass[1]*grassWeight+soil[1]*bare+rock[1]*stone;b=grass[2]*grassWeight+soil[2]*bare+rock[2]*stone;
-   const shade=.91+detail*.18;r*=shade;g*=shade;b*=shade;r+=(1-r)*snow;g+=(1-g)*snow;b+=(1-b)*snow}
+   const shade=.91+detail*.18;r*=shade;g*=shade;b*=shade}
   tc[i*3]=r;tc[i*3+1]=g;tc[i*3+2]=b}
  tg.attributes.color.needsUpdate=true}
 
 // ---- aeroporto
 const sm=(color,options)=>new T.MeshStandardMaterial(Object.assign({color,roughness:.48,metalness:0},options));
-const rwT=(()=>{const c=document.createElement('canvas');c.width=256;c.height=2048;const x=c.getContext('2d');x.fillStyle='#3b3e42';x.fillRect(0,0,256,2048);
- for(let i=0;i<15000;i++){const v=35+rn()*52|0;x.fillStyle=`rgba(${v},${v+1},${v+3},${rn()*.32})`;x.fillRect(rn()*256,rn()*2048,.5+rn()*2,.5+rn()*3)}
- for(let y=300;y<1750;y+=82){x.fillStyle='#f0eee3';x.fillRect(125,y,6,41)}x.fillStyle='#e8e8e8';x.fillRect(7,0,5,2048);x.fillRect(244,0,5,2048);
- for(const y0 of[30,1968])for(let i=0;i<8;i++)x.fillRect(25+i*29,y0,18,40);return new T.CanvasTexture(c)})();
-const rw=new T.Mesh(new T.PlaneGeometry(30,1500).rotateX(-PI/2),new T.MeshLambertMaterial({map:rwT,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2}));rw.position.y=2.08;rw.receiveShadow=true;scn.add(rw);
+const rwCanvas=document.createElement('canvas');rwCanvas.width=256;rwCanvas.height=2048;
+const rwContext=rwCanvas.getContext('2d'),rwT=new T.CanvasTexture(rwCanvas);
+rwT.encoding=T.sRGBEncoding;
+function drawRunwayMarkings(){
+ rwContext.clearRect(0,0,256,2048);
+ for(let y=300;y<1750;y+=82){rwContext.fillStyle='#f0eee3';rwContext.fillRect(125,y,6,41)}
+ rwContext.fillStyle='#e8e8e8';rwContext.fillRect(7,0,5,2048);rwContext.fillRect(244,0,5,2048);
+ for(const y0 of[30,1968])for(let i=0;i<8;i++)rwContext.fillRect(25+i*29,y0,18,40);
+ rwT.needsUpdate=true
+}
+drawRunwayMarkings();
+const asphaltLoader=new T.TextureLoader();
+let runwayColor;
+const asphaltTex=asphaltLoader.load('assets/asphalt/asphalt-color.png',texture=>{if(runwayColor){runwayColor.image=texture.image;runwayColor.needsUpdate=true}},undefined,error=>console.error('Não foi possível carregar a textura de cor do asfalto:',error));
+asphaltTex.encoding=T.sRGBEncoding;asphaltTex.wrapS=asphaltTex.wrapT=T.RepeatWrapping;asphaltTex.repeat.set(5,8);asphaltTex.anisotropy=16;
+runwayColor=asphaltTex.clone();runwayColor.repeat.set(15,750);
+let rwBump,rwSpecular;
+const asphaltBump=asphaltLoader.load('assets/asphalt/asphalt-bump.png',texture=>{if(rwBump){rwBump.image=texture.image;rwBump.needsUpdate=true}},undefined,error=>console.error('Não foi possível carregar a textura de relevo do asfalto:',error));
+asphaltBump.wrapS=asphaltBump.wrapT=T.RepeatWrapping;asphaltBump.repeat.set(5,8);asphaltBump.anisotropy=16;
+const runwayBump=asphaltBump.clone();runwayBump.repeat.set(15,750);
+const asphaltSpecular=asphaltLoader.load('assets/asphalt/asphalt-roughness.png',texture=>{
+ const canvas=document.createElement('canvas');canvas.width=texture.image.width;canvas.height=texture.image.height;
+ const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(texture.image,0,0);
+ const pixels=context.getImageData(0,0,canvas.width,canvas.height);
+ for(let i=0;i<pixels.data.length;i+=4){pixels.data[i]=255-pixels.data[i];pixels.data[i+1]=255-pixels.data[i+1];pixels.data[i+2]=255-pixels.data[i+2]}
+ context.putImageData(pixels,0,0);texture.image=canvas;texture.needsUpdate=true;
+ if(rwSpecular){rwSpecular.image=canvas;rwSpecular.needsUpdate=true}
+},undefined,error=>console.error('Não foi possível carregar a textura de rugosidade do asfalto:',error));
+asphaltSpecular.wrapS=asphaltSpecular.wrapT=T.RepeatWrapping;asphaltSpecular.repeat.set(5,8);asphaltSpecular.anisotropy=16;
+rwBump=runwayBump;rwSpecular=asphaltSpecular.clone();rwSpecular.repeat.set(15,750);
+const runwayMaterial=new T.MeshPhongMaterial({map:runwayColor,bumpMap:rwBump,specularMap:rwSpecular,bumpScale:.035,specular:0x222222,shininess:8,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2});
+const runwayMarks=new T.Mesh(new T.PlaneGeometry(30,1500).rotateX(-PI/2),new T.MeshBasicMaterial({map:rwT,transparent:true,alphaTest:.1,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3}));
+runwayMarks.position.y=2.1;scn.add(runwayMarks);
+const rw=new T.Mesh(new T.PlaneGeometry(30,1500).rotateX(-PI/2),runwayMaterial);rw.position.y=2.08;rw.receiveShadow=true;scn.add(rw);
 function runwayNumber(text,z){const c=document.createElement('canvas');c.width=512;c.height=256;const x=c.getContext('2d');x.fillStyle='#f0eee3';x.font='bold 210px Arial,sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText(text,256,132);
  const texture=new T.CanvasTexture(c),material=new T.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.1,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3});
  const mark=new T.Mesh(new T.PlaneGeometry(12,7).rotateX(-PI/2),material);mark.position.set(0,2.12,z);mark.receiveShadow=false;scn.add(mark)}
 runwayNumber('18',685);runwayNumber('36',-685);
-const asphaltTex=(()=>{const c=document.createElement('canvas');c.width=c.height=512;const x=c.getContext('2d');x.fillStyle='#494b4e';x.fillRect(0,0,512,512);
- for(let i=0;i<18000;i++){const q=42+rn()*75|0;x.fillStyle=`rgba(${q},${q+1},${q+3},${.1+rn()*.26})`;x.beginPath();x.ellipse(rn()*512,rn()*512,.5+rn()*2,.5+rn()*1.5,rn()*PI,0,2*PI);x.fill()}
- for(let i=0;i<90;i++){const px=rn()*512,py=rn()*512;x.strokeStyle=`rgba(25,27,29,${.08+rn()*.14})`;x.lineWidth=.4+rn()*1;x.beginPath();x.moveTo(px,py);x.lineTo(px+rn()*13-6,py+rn()*4);x.stroke()}
- const t=new T.CanvasTexture(c);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(5,8);t.anisotropy=8;return t})();
-const asphalt=sm(0xffffff,{map:asphaltTex,roughness:.96});
+const asphalt=new T.MeshPhongMaterial({map:asphaltTex,bumpMap:asphaltBump,specularMap:asphaltSpecular,bumpScale:.035,specular:0x222222,shininess:8});
 const hangarTex=(()=>{const c=document.createElement('canvas');c.width=256;c.height=256;const x=c.getContext('2d');x.fillStyle='#b9bdbe';x.fillRect(0,0,256,256);
  for(let i=0;i<256;i+=8){x.fillStyle=i%16?'rgba(30,38,43,.12)':'rgba(255,255,255,.18)';x.fillRect(i,0,3,256);x.strokeStyle='rgba(38,42,45,.18)';x.lineWidth=1;x.beginPath();x.moveTo(i+4,0);x.lineTo(i+4,256);x.stroke()}
  for(let i=0;i<2400;i++){const n=65+rn()*140|0;x.fillStyle=`rgba(${n},${n},${n},${.06+rn()*.14})`;x.fillRect(rn()*256,rn()*256,1+rn()*2,1+rn()*3)}
@@ -160,7 +225,8 @@ const hangarDoorTex=(()=>{const c=document.createElement('canvas');c.width=256;c
  for(let y=8;y<256;y+=16){x.fillStyle='rgba(215,225,230,.12)';x.fillRect(0,y,256,2);x.fillStyle='rgba(12,17,22,.24)';x.fillRect(0,y+3,256,2)}
  for(let i=0;i<900;i++){const v=90+rn()*80|0;x.fillStyle=`rgba(${v},${v},${v},.08)`;x.fillRect(rn()*256,rn()*256,1+rn()*3,1+rn()*3)}
  const t=new T.CanvasTexture(c);t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(2,2);t.anisotropy=8;return t})();
-function pad(w,d,x,z,material=asphalt){const o=new T.Mesh(new T.PlaneGeometry(w,d).rotateX(-PI/2),material);o.position.set(x,2.08,z);o.receiveShadow=true;scn.add(o);return o}
+function pad(w,d,x,z,material=asphalt){const surface=material.clone();for(const key of['map','bumpMap','specularMap'])if(surface[key]){surface[key]=surface[key].clone();surface[key].repeat.set(w/4,d/4)}
+ const o=new T.Mesh(new T.PlaneGeometry(w,d).rotateX(-PI/2),surface);o.position.set(x,2.08,z);o.receiveShadow=true;scn.add(o);return o}
 pad(150,185,48,-185);pad(80,20,45,-205);pad(28,85,54,-140);
 function hangar(x,z,w,d,h,paint,largeDoor=false){const wall=new T.MeshLambertMaterial({map:hangarTex,color:paint}),roof=new T.MeshLambertMaterial({map:hangarRoofTex,color:0xffffff}),door=new T.MeshLambertMaterial({map:hangarDoorTex,color:0xffffff});
  const shell=new T.Mesh(new T.BoxGeometry(w,h,d),wall);shell.position.set(x,2+h/2,z);shell.castShadow=shell.receiveShadow=true;scn.add(shell);
@@ -178,26 +244,43 @@ hangar(-70,-250,36,28,10,0x90979d);hangar(-70,-170,36,28,10,0x858d94);hangar(210
  for(let z=-700;z<=700;z+=90)for(const x of [-18,18]){const l=new T.Mesh(new T.SphereGeometry(.22,8,6),lampMat);l.position.set(x,2.4,z);scn.add(l)}
  const threshold=sm(0xf6f1dc,{emissive:0x28251c,roughness:.4});for(const z of [-690,690])for(let i=-5;i<=5;i++){const m=new T.Mesh(new T.BoxGeometry(1.05,.035,17),threshold);m.position.set(i*2.15,2.12,z);scn.add(m)}}
 
-// ---- árvores texturizadas (instanciadas) em manchas de floresta ao redor do aeroporto
-const leafTex=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d');x.fillStyle='#315d32';x.fillRect(0,0,128,128);for(let i=0;i<950;i++){const r=12+rn()*42;x.fillStyle=`rgba(${35+rn()*55|0},${80+rn()*95|0},${25+rn()*38|0},${.28+rn()*.55})`;x.beginPath();x.arc(rn()*128,rn()*128,r,0,2*PI);x.fill()}return new T.CanvasTexture(c)})();
-const barkTex=(()=>{const c=document.createElement('canvas');c.width=64;c.height=256;const x=c.getContext('2d');x.fillStyle='#59452e';x.fillRect(0,0,64,256);for(let i=0;i<90;i++){x.strokeStyle=`rgba(${25+rn()*50|0},${18+rn()*32|0},${8+rn()*20|0},.55)`;x.lineWidth=1+rn()*3;x.beginPath();x.moveTo(rn()*64,0);x.lineTo(rn()*64,256);x.stroke()}return new T.CanvasTexture(c)})();
-{const N=2600,leafMat=new T.MeshLambertMaterial({color:0xffffff,map:leafTex}),im=new T.InstancedMesh(new T.ConeGeometry(2.8,11,10,5).translate(0,5.5,0),leafMat,N),
-  pineLow=new T.InstancedMesh(new T.ConeGeometry(3.5,6.6,10,4).translate(0,3.8,0),leafMat,N),
-  pineHigh=new T.InstancedMesh(new T.ConeGeometry(2.35,5.5,10,4).translate(0,7,0),leafMat,N),
-  broad=new T.InstancedMesh(new T.SphereGeometry(3.4,12,10).translate(0,4.8,0),leafMat,N),
-  broadTop=new T.InstancedMesh(new T.SphereGeometry(2.45,10,8).translate(0,7.1,0),leafMat,N),
-  tr=new T.InstancedMesh(new T.CylinderGeometry(.28,.5,3.8,7).translate(0,1.9,0),new T.MeshLambertMaterial({map:barkTex}),N),dm=new T.Object3D(),col=new T.Color();let n=0,nb=0;
-  for(let k=0;k<40000&&n<N;k++){const a=rn()*PI*2,r=140+Math.sqrt(rn())*1450,x=Math.cos(a)*r,z=Math.sin(a)*r;
-  if(Math.abs(x)<130&&Math.abs(z)<2300)continue;if(x>-110&&x<130&&z>-340&&z<220)continue;if(Math.hypot(x-700,z+1000)<640)continue;if(vn(x/180,z/180)<.52)continue;
-  const s=.7+rn()*.9,ground=Q(x,z);dm.position.set(x,ground,z);dm.scale.set(s,s*(.8+rn()*.6),s);dm.rotation.y=rn()*6;dm.updateMatrix();const isBroad=rn()<.3;
-  if(isBroad){broad.setMatrixAt(nb,dm.matrix);broadTop.setMatrixAt(nb,dm.matrix);col.setHSL(.27+rn()*.07,.45,.17+rn()*.1);broad.setColorAt(nb,col);broadTop.setColorAt(nb,col);nb++}
-  else{const pine=n-nb;im.setMatrixAt(pine,dm.matrix);pineLow.setMatrixAt(pine,dm.matrix);pineHigh.setMatrixAt(pine,dm.matrix);
-   col.setHSL(.27+rn()*.07,.45,.17+rn()*.1);im.setColorAt(pine,col);pineLow.setColorAt(pine,col);pineHigh.setColorAt(pine,col)}
-  const trunk=new T.Object3D();trunk.position.set(x,ground,z);trunk.scale.set(s,s,s);trunk.rotation.y=dm.rotation.y;trunk.updateMatrix();tr.setMatrixAt(n,trunk.matrix);
-  n++}
-  im.count=pineLow.count=pineHigh.count=n-nb;broad.count=broadTop.count=nb;tr.count=n;
-  for(const trees of [im,pineLow,pineHigh,broad,broadTop])trees.castShadow=trees.receiveShadow=true;
-  tr.castShadow=true;im.frustumCulled=tr.frustumCulled=pineLow.frustumCulled=pineHigh.frustumCulled=broad.frustumCulled=broadTop.frustumCulled=false;scn.add(tr,im,pineLow,pineHigh,broad,broadTop)}
+// ---- árvores FBX instanciadas em manchas de floresta ao redor do aeroporto
+const treeVariants=[[],[]],treeCount=2600;
+for(let k=0;k<40000&&treeVariants[0].length+treeVariants[1].length<treeCount;k++){
+ const a=rn()*PI*2,r=140+Math.sqrt(rn())*1450,x=Math.cos(a)*r,z=Math.sin(a)*r;
+ if(Math.abs(x)<130&&Math.abs(z)<2300)continue;if(x>-110&&x<130&&z>-340&&z<220)continue;if(Math.hypot(x-700,z+1000)<640)continue;if(vn(x/180,z/180)<.52)continue;
+ treeVariants[rn()<.5?0:1].push({x,z,scale:.7+rn()*.9,rotation:rn()*PI*2})}
+const treeManager=new T.LoadingManager();
+treeManager.setURLModifier(url=>/(?:^|[\\/])(?:Tree(?:_a_Atlas)?\.png)(?:[?#].*)?$/i.test(url)?'assets/trees/Tree.png':url);
+const treeTexture=new T.TextureLoader(treeManager).load('assets/trees/Tree.png',undefined,undefined,error=>console.error('Não foi possível carregar a textura das árvores.',error));
+treeTexture.flipY=false;treeTexture.encoding=T.sRGBEncoding;treeTexture.anisotropy=ren.capabilities.getMaxAnisotropy();
+new T.FBXLoader(treeManager).load('assets/trees/trees.fbx',forest=>{
+ forest.updateMatrixWorld(true);
+ for(const [index,name] of ['Tree_1','Tree_2'].entries()){
+  const model=forest.getObjectByName(name),positions=treeVariants[index];
+  if(!model){console.error(`Variante de árvore não encontrada no FBX: ${name}`);continue}
+  const parts=[];model.traverse(object=>{
+   if(!object.isMesh)return;
+   const geometry=object.geometry.clone().applyMatrix4(object.matrixWorld);geometry.computeBoundingBox();
+   parts.push({geometry,materialCount:Array.isArray(object.material)?object.material.length:1})});
+  if(!parts.length){console.error(`A variante de árvore não contém malhas: ${name}`);continue}
+  const bounds=new T.Box3();parts.forEach(part=>bounds.union(part.geometry.boundingBox));
+  const center=bounds.getCenter(new T.Vector3()),height=bounds.max.y-bounds.min.y;
+  if(height<=0){console.error(`Altura inválida para a variante de árvore: ${name}`);continue}
+  const normalize=new T.Matrix4().makeTranslation(-center.x,-bounds.min.y,-center.z);
+  for(const part of parts){
+   part.geometry.applyMatrix4(normalize);
+   const material=()=>new T.MeshLambertMaterial({map:treeTexture,alphaTest:.16,side:T.DoubleSide});
+   const materials=Array.from({length:part.materialCount},material);
+   const instances=new T.InstancedMesh(part.geometry,materials.length===1?materials[0]:materials,positions.length),transform=new T.Object3D();
+   positions.forEach((position,i)=>{
+    transform.position.set(position.x,Q(position.x,position.z),position.z);
+    transform.rotation.y=position.rotation;
+    transform.scale.setScalar(position.scale*11/height);
+    transform.updateMatrix();instances.setMatrixAt(i,transform.matrix)});
+   instances.castShadow=instances.receiveShadow=true;instances.frustumCulled=false;scn.add(instances)}
+ }
+},undefined,error=>console.error('Não foi possível carregar o modelo das árvores.',error));
 {const N=18000,tufts=new T.InstancedMesh(new T.ConeGeometry(.085,.5,4,1).translate(0,.25,0),new T.MeshLambertMaterial({color:0xffffff}),N),o=new T.Object3D(),c=new T.Color();
   for(let i=0;i<N;i++){const a=rn()*2*PI,r=120+Math.sqrt(rn())*1450,x=Math.cos(a)*r,z=Math.sin(a)*r;
    if((Math.abs(x)<32&&Math.abs(z)<760)||(x>-120&&x<145&&z>-350&&z<230)||Math.hypot(x-700,z+1000)<620){i--;continue}
@@ -449,7 +532,7 @@ function applyPaint(name){const preset=PAINTS[name]||PAINTS.custom,custom=profil
     for(let y=70;y<workspace.canvas.height;y+=128)for(let x=65;x<workspace.canvas.width;x+=144){work.beginPath();work.moveTo(x-7,y);work.lineTo(x+7,y);work.moveTo(x,y-7);work.lineTo(x,y+7);work.moveTo(x-5,y-5);work.lineTo(x+5,y+5);work.moveTo(x+5,y-5);work.lineTo(x-5,y+5);work.stroke()}}
   ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(workspace.canvas,0,0);
   texture.needsUpdate=true});
- refreshAirframeTexture(palette.wing);cowlCapMat.color.setHex(paintHex(palette.base));
+ refreshAirframeTexture(palette.wing);cowlCapMat.color.setHex(paintHex(palette.base));applyCessnaPaint(palette);
  wm.color.setHex(0xffffff);wingStripeMat.color.setHex(paintHex(palette.stripe));wingAccentMat.color.setHex(paintHex(palette.accent))}
 AC.add(new T.Mesh(wing([-5.5,-5,-4.2,-3.4,-2.9,-1.5,0,1.5,2.9,3.4,4.2,5,5.5],0,.75),wm));
 [[-.95,0,.95],[2.95,3.1],[-3.1,-2.95],[5.4,5.5],[-5.5,-5.4]].forEach(xs=>AC.add(new T.Mesh(wing(xs,.75,1),wm)));
@@ -622,10 +705,109 @@ CK.traverse(o=>{if(o.isMesh)o.receiveShadow=true});
 // sombras: tudo projeta, exceto a pele (o casco fechado "hull" projeta por ela) e o interior
 AC.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
 [cowl,aft,cabSkin,glass,dsc].forEach(o=>o.castShadow=false);CK.traverse(o=>{if(o.isMesh)o.castShadow=false});hull.castShadow=true;hull.receiveShadow=false;
-// Aeronaves estáticas no pátio usam o mesmo modelo detalhado do avião do jogador.
-for(const [x,z,yaw,scale] of [[28,-214,PI/2,.72],[63,-158,-PI/2,.68],[112,-205,PI/2,.78]]){
- const parked=AC.clone(true);parked.position.set(x,2.08+1.1*scale,z);parked.rotation.y=yaw;parked.scale.setScalar(scale);
- parked.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});scn.add(parked)}
+AC.children.forEach(child=>{child.visible=false});
+const cessnaModelGroup=new T.Group();AC.add(cessnaModelGroup);
+let cessnaModelLoaded=false;
+const cessnaParts={prop:null,ailerons:[],flaps:[],elevators:[],rudder:null};
+const cessnaPaintMaterials=[];let cessnaPaintPalette=null;
+const cessnaTextures=new Map(),cessnaTextureLoader=new T.TextureLoader();
+const cessnaManager=new T.LoadingManager();
+cessnaManager.setURLModifier(url=>url.replace(/\/[0-9a-f]{32}_([^/?#]+)(?=[?#]|$)/i,'/$1'));
+const cessnaTextureGroups={
+ exterior:{map:'RGB_Cessna_Exterior_Exterior_Body_MAT_BaseColo.png',normalMap:'N_Cessna_Exterior_Exterior_Body_MAT_Normal.png',roughnessMap:'R_Exterior_Body_MAT_Roughness.png',metalnessMap:'R_Exterior_Body_MAT_Metallic.png',aoMap:'R_Exterior_Body_MAT_AO.png'},
+ interior:{map:'RGB_Cessna_Interior_Interior_Body_MAT_BaseColo.png',normalMap:'N_Cessna_Interior_Interior_Body_MAT_Normal.png',roughnessMap:'R_Interior_Body_MAT_Roughness.png',metalnessMap:'R_Interior_Body_MAT_Metallic.png',aoMap:'R_Interior_Body_MAT_AO.png'},
+ meter:{map:'RGB_Cessna_Interior_Meter_01_MAT_BaseColor.png',normalMap:'N_Cessna_Interior_Meter_01_MAT_Normal.png',roughnessMap:'R_Meter_01_MAT_Roughness.png',metalnessMap:'R_Meter_01_MAT_Metallic.png',aoMap:'R_Meter_01_MAT_AO.png'},
+ seats:{map:'RGB_a_Seats_MAT_BaseColor.png',normalMap:'N_a_Seats_MAT_Normal.png',roughnessMap:'R_Seats_MAT_Roughness.png',metalnessMap:'R_Seats_MAT_Metallic.png',aoMap:'R_Seats_MAT_AO.png'},
+ belt:{map:'RGB_Temp_SeatBelt_SeatBeltM_BaseColor.png',normalMap:'N_Temp_SeatBelt_SeatBeltM_Normal.png',roughnessMap:'R_SeatBeltM_Roughness.png',metalnessMap:'R_SeatBeltM_Metallic.png',aoMap:'R_SeatBeltM_AO.png'},
+ seatGear:{map:'RGB_SeatGear_BaseColor.png'},
+ steering:{map:'RGB_Steering_low_Steering_MAT_BaseColor.png',normalMap:'N_Steering_low_Steering_MAT_Normal.png',aoMap:'R_Steering_MAT_AO.png'},
+ pedal:{map:'RGB_Pedal_MAT_BaseColor.png',normalMap:'N_Pedal_MAT_Normal.png',roughnessMap:'R_Pedal_MAT_Roughness.png',metalnessMap:'R_Pedal_MAT_Metallic.png',aoMap:'R_Pedal_MAT_AO.png'},
+ newMaterial:{map:'RGB_New_Mat_BaseColor.png',normalMap:'N_New_Mat_Normal.png',roughnessMap:'R_New_Mat_Roughness.png',metalnessMap:'R_New_Mat_Metallic.png',aoMap:'R_New_Mat_AO.png',emissiveMap:'RGB_New_Mat_Emissive.png'},
+ newMaterial01:{map:'RGB_New_Mat_01_BaseColor.png',normalMap:'N_New_Mat_01_Normal.png',roughnessMap:'R_New_Mat_01_Roughness.png',metalnessMap:'R_New_Mat_01_Metallic.png',aoMap:'R_New_Mat_01_AO.png',emissiveMap:'RGB_New_Mat_01_Emissive.png'}
+};
+function cessnaTexture(name,isColor){
+ if(!cessnaTextures.has(name)){
+  const texture=cessnaTextureLoader.load(`assets/cessna/textures/${name}`,undefined,undefined,error=>console.error(`Não foi possível carregar a textura ${name}.`,error));
+  texture.flipY=false;texture.anisotropy=ren.capabilities.getMaxAnisotropy();
+  if(isColor)texture.encoding=T.sRGBEncoding;
+  cessnaTextures.set(name,texture)}
+ return cessnaTextures.get(name)}
+function cessnaMapsFor(name){
+ if(name.includes('Exterior_Body'))return cessnaTextureGroups.exterior;
+ if(name.includes('Interior_Body'))return cessnaTextureGroups.interior;
+ if(name.includes('Meter_01'))return cessnaTextureGroups.meter;
+ if(name.includes('SeatBelt'))return cessnaTextureGroups.belt;
+ if(name.includes('SeatGear'))return cessnaTextureGroups.seatGear;
+ if(name.includes('Seats'))return cessnaTextureGroups.seats;
+ if(name.includes('Steering'))return cessnaTextureGroups.steering;
+ if(name.includes('Paddle')||name.includes('Pedal'))return cessnaTextureGroups.pedal;
+ if(name.includes('New_Mat_01'))return cessnaTextureGroups.newMaterial01;
+ if(name.includes('New_Mat')||name.includes('ButtonPlate')||name.includes('Buttons'))return cessnaTextureGroups.newMaterial;
+ return null}
+function softenCessnaExterior(material){
+ if(material.isMeshPhongMaterial){material.specular.setHex(0x292929);material.shininess=8;material.reflectivity=0}
+ else if(material.isMeshStandardMaterial){material.roughness=Math.max(material.roughness,.85);material.metalness=Math.min(material.metalness,.05);material.envMapIntensity=.2}
+ return material}
+function applyCessnaPaint(palette){
+ cessnaPaintPalette=palette;
+ const colors=palette.base;
+ cessnaPaintMaterials.forEach(material=>material.color.setRGB(colors[0]/255,colors[1]/255,colors[2]/255))}
+function loadCessna(){
+ if(!T.FBXLoader){console.error('FBXLoader não foi carregado; a Cessna detalhada não estará disponível.');return}
+ const loader=new T.FBXLoader(cessnaManager);loader.setResourcePath('assets/cessna/textures/');
+ loader.load('assets/cessna/Cessna172.fbx',aircraft=>{
+  const meshes=new Map();
+  aircraft.traverse(object=>{
+   if(!object.isMesh)return;
+   object.castShadow=true;object.receiveShadow=true;
+   meshes.set(object.name,object);
+   const isInterior=object.name.startsWith('Cessna_Interior_')||/^(Dynamic_|Static_)/.test(object.name);
+   if(object.geometry.attributes.uv&&!object.geometry.attributes.uv2)object.geometry.setAttribute('uv2',object.geometry.attributes.uv);
+   const materials=Array.isArray(object.material)?object.material:[object.material];
+   const mapped=materials.map(original=>{
+    const name=original.name||'',group=cessnaMapsFor(name);
+    if(!group&&name.toLowerCase().includes('glass')){
+     return new T.MeshPhysicalMaterial({color:0x9dbfd2,roughness:.12,metalness:.08,transparent:true,opacity:.14,side:T.DoubleSide,depthWrite:false,envMapIntensity:.35})}
+    if(!group){if(isInterior)original.side=T.DoubleSide;return object.name.startsWith('Cessna_Exterior_Body_')?softenCessnaExterior(original):original}
+    const materialOptions={name,color:0xffffff,side:isInterior?T.DoubleSide:original.side,transparent:original.transparent,opacity:original.opacity,alphaTest:original.alphaTest};
+    const material=isInterior?new T.MeshBasicMaterial(materialOptions):new T.MeshStandardMaterial({...materialOptions,roughness:.78,metalness:0,envMapIntensity:.55});
+    Object.entries(group).forEach(([slot,file])=>{material[slot]=cessnaTexture(file,slot==='map'||slot==='emissiveMap')});
+    if(group.roughnessMap)material.roughness=1;
+    if(group.metalnessMap)material.metalness=1;
+    if(group.emissiveMap&&material.isMeshStandardMaterial){material.emissive.set(0xffffff);material.emissiveIntensity=.45}
+    if(name.includes('Exterior_Body'))cessnaPaintMaterials.push(material);
+    return object.name.startsWith('Cessna_Exterior_Body_')?softenCessnaExterior(material):material});
+   object.material=Array.isArray(object.material)?mapped:mapped[0]});
+  const horizontalSize=new T.Box3().setFromObject(aircraft).getSize(new T.Vector3());
+  aircraft.rotation.order='YXZ';
+  aircraft.rotation.y=horizontalSize.z>horizontalSize.x?PI/2:PI;
+  aircraft.updateMatrixWorld(true);
+  let bounds=new T.Box3().setFromObject(aircraft),size=bounds.getSize(new T.Vector3());
+  aircraft.scale.multiplyScalar(11/Math.max(size.x,size.z));
+  aircraft.updateMatrixWorld(true);bounds=new T.Box3().setFromObject(aircraft);
+  const center=bounds.getCenter(new T.Vector3());
+  aircraft.position.set(-center.x,-1.15-bounds.min.y,-center.z);
+  aircraft.updateMatrixWorld(true);
+  const hinge=(name,edge=0)=>{
+   const mesh=meshes.get(name);
+   if(!mesh){console.warn(`Peça móvel da Cessna não encontrada: ${name}`);return null}
+   const parent=mesh.parent,bounds=new T.Box3().setFromObject(mesh),center=bounds.getCenter(new T.Vector3());
+   if(edge)center.addScaledVector(aircraft.localToWorld(new T.Vector3(0,0,-1)).sub(aircraft.getWorldPosition(new T.Vector3())).normalize(),bounds.getSize(new T.Vector3()).z*.5*edge);
+   const pivotPosition=parent.worldToLocal(center);
+   const pivot=new T.Group();parent.add(pivot);pivot.position.copy(pivotPosition);pivot.attach(mesh);return pivot};
+  cessnaParts.prop=hinge('Cessna_Exterior_Body_MAT_0001');
+  cessnaParts.ailerons=['Cessna_Exterior_Body_MAT_0014','Cessna_Exterior_Body_MAT_0015'].map(hinge).filter(Boolean);
+  cessnaParts.flaps=['Cessna_Exterior_Body_MAT_0016','Cessna_Exterior_Body_MAT_0017'].map(name=>hinge(name,1)).filter(Boolean);
+  cessnaParts.flaps.forEach(p=>p.traverse(object=>{if(object.isMesh){const materials=Array.isArray(object.material)?object.material:[object.material];materials.forEach(material=>{material.side=T.DoubleSide;material.needsUpdate=true})}}));
+  cessnaParts.elevators=['Cessna_Exterior_Body_MAT_0012','Cessna_Exterior_Body_MAT_0013'].map(hinge).filter(Boolean);
+  cessnaParts.rudder=hinge('Cessna_Exterior_Body_MAT_0008');
+  cessnaModelGroup.add(aircraft);
+  applyCessnaPaint(cessnaPaintPalette||(typeof profile!=='undefined'?(PAINTS[profile.paint]||PAINTS.custom):PAINTS.custom));
+  for(const [x,z,yaw,scale] of [[28,-214,PI/2,.72],[63,-158,-PI/2,.68],[112,-205,PI/2,.78]]){
+   const parked=aircraft.clone(true);parked.position.set(x,2.08+1.1*scale,z);parked.rotation.y+=yaw;parked.scale.multiplyScalar(scale);scn.add(parked)}
+  cessnaModelLoaded=true;
+ },undefined,error=>console.error('Não foi possível carregar assets/cessna/Cessna172.fbx.',error))}
+loadCessna();
 
 // Portões de percurso: verde no lado de aproximação, vermelho após a travessia.
 const gateLabel=(text,color)=>{const c=document.createElement('canvas');c.width=512;c.height=96;const x=c.getContext('2d');
@@ -642,7 +824,7 @@ const m=1090,Ixx=1285,Iyy=1825,Izz=2667,Sw=16.2,bw=11,cw=1.49,g=9.81;
 const GEAR=[[0,-1.15,-1.4,1],[-1.35,-1.15,.3,0],[1.35,-1.15,.3,0]];
 const P=new T.Vector3(),V=new T.Vector3(),W=new T.Vector3(),Qt=new T.Quaternion(),cq=new T.Quaternion();
 const ct={e:0,a:0,r:0,th:0,fl:0,fa:0,tr:0,br:0,pk:1};
-let I={sp:0,rho:1.225,al:0,be:0,warn:0},crashed=false,cockpit=false,fuel=.92,engT=110;
+let I={sp:0,rho:1.225,al:0,be:0,warn:0,separation:0},separation=0,simTime=0,crashed=false,cockpit=false,fuel=.92,engT=110;
 const formatMoney=value=>`M$ ${roundMoney(value).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`,roundMoney=value=>Math.round((value+Number.EPSILON)*100)/100;
 const SAVE_KEY='cessna172-flight-sim-v2',freshProfile=()=>({credits:1013.25,startCreditVersion:1,paint:'custom',customColors:{base:'#e7e4dc',stripe:'#183451',accent:'#78a5cc',wing:'#e7e4dc'},skins:{standard:true,christmas:false,feminine:false},upgrades:{engine:0,handling:0}});
 function loadProfile(){try{const raw=localStorage.getItem(SAVE_KEY);if(!raw)return freshProfile();const data=JSON.parse(raw);
@@ -713,20 +895,28 @@ function awardGate(previous){if(checkpoint>=gates.length||V.z>=-8)return;const g
  else updateMission(`Portão atravessado · +${formatMoney(200)} · próximo: ${checkpoint+1}/3`);
  persistProfile();updateMoney()}
 function crash(){if(crashed)return;crashed=true;V.set(0,0,0);W.set(0,0,0);deathTime=0;deathCameraStart.copy(cam.position);deathScreen.classList.add('active');deathScreen.setAttribute('aria-hidden','false')}
-function reset(){P.set(0,3.2,620);V.set(0,0,0);W.set(0,0,0);Qt.identity();cq.copy(Qt);Object.assign(ct,{e:0,a:0,r:0,th:0,fl:0,fa:0,tr:0,br:0,pk:1});crashed=false;fuel=.92;engT=110;checkpoint=0;
+function reset(){P.set(0,3.2,620);V.set(0,0,0);W.set(0,0,0);Qt.identity();cq.copy(Qt);Object.assign(ct,{e:0,a:0,r:0,th:0,fl:0,fa:0,tr:0,br:0,pk:1});separation=0;simTime=0;I={sp:0,rho:1.225,al:0,be:0,warn:0,separation:0};crashed=false;fuel=.92;engT=110;checkpoint=0;
  gates.forEach((gate,i)=>gate.position.set(gateData[i].x,gateData[i].y,gateData[i].z));updateMission();ms.style.display='none';deathTime=0;deathScreen.classList.remove('active');deathScreen.setAttribute('aria-hidden','true')}
 function step(dt){
+ simTime+=dt;
  const previous=P.clone();
  const iq=Qt.clone().invert(),vb=V.clone().applyQuaternion(iq),sp=vb.length(),rho=1.225*Math.exp(-P.y/9000),qb=.5*rho*sp*sp;
  const al=sp>1?Math.atan2(-vb.y,-vb.z):0,be=sp>1?Math.asin(clamp(vb.x/sp,-1,1)):0,f=ct.fa/30;
- const asl=.29-f*.03,sta=clamp((Math.abs(al)-asl)/.12,0,1);
- const CLf=(.31+5*clamp(al,-asl,asl)+.55*f)*(1-.55*sta),CDf=.031+.057*CLf*CLf+.07*f+sta*.7*Math.abs(Math.sin(al));
+ const alphaAbs=Math.abs(al),asl=(16.5-2*f)*D,stallThreshold=asl-(separation>.05?2*D:0);
+ const separationTarget=clamp((alphaAbs-stallThreshold+1.5*D)/(8*D),0,1),separationTime=separationTarget>separation?.22:.65;
+ separation+=(separationTarget-separation)*clamp(dt/separationTime,0,1);
+ const clMax=1.48+.42*f,clAttached=clamp(.22+5.2*al+.45*f,-clMax,clMax);
+ const clSeparated=Math.sign(al)*clMax*(.08+.92*Math.exp(-2.2*Math.max(0,alphaAbs-asl)));
+ const CLf=clAttached*(1-separation)+clSeparated*separation;
+ const CDf=.032+.055*CLf*CLf+.075*f+.65*separation*separation+.35*Math.sin(al)**2;
  const vh=sp>.5?vb.clone().divideScalar(sp):new T.Vector3(0,0,-1),k=qb*Sw;
  const F=new T.Vector3(1,0,0).cross(vh).normalize().multiplyScalar(k*CLf).addScaledVector(vh,-k*CDf);F.x-=k*.31*be;
  const th=ct.th*(1+.12*profile.upgrades.engine)*(fuel>0?1:0);F.z-=th*Math.min(2000,.78*119000*Math.pow(rho/1.225,.9)/Math.max(sp,10));
  const V2=Math.max(sp,8),controlFactor=1+.08*profile.upgrades.handling,ph=-W.z*bw/(2*V2),qh=W.x*cw/(2*V2),rh=-W.y*bw/(2*V2),
-  dA=ct.a*.12*controlFactor,dE=(ct.e*.12+ct.tr*.07)*controlFactor,dR=ct.r*.12*controlFactor,bf=sta*ct.r*.025;
- const Cl=-.09*be-.47*ph+.1*rh+.1*dA+bf*.02,Cm=.036-.89*clamp(al,-.6,.6)-12*qh+.62*dE+bf*.012,Cn=.07*be-.1*rh+.03*dR-.015*dA;
+  controlEffectiveness=1-.72*separation,dA=ct.a*.12*controlFactor*controlEffectiveness,
+  dE=(ct.e*.12+ct.tr*.07)*controlFactor*(1-.35*separation),dR=ct.r*.12*controlFactor*(1-.45*separation);
+ const Cl=-.09*be-.47*ph+.1*rh+.1*dA,Cm=.036-.89*clamp(al,-.6,.6)-12*qh+.62*dE-.32*Math.sign(al)*separation+.035*separation*Math.sin(simTime*28),
+  Cn=.07*be-.1*rh+.03*dR-.035*dA;
  const tau=new T.Vector3(k*cw*Cm,-(k*bw*Cn-th*(1-clamp(sp/50,0,1))*900),-k*bw*Cl);
  const Fw=F.applyQuaternion(Qt);Fw.y-=m*g;
  const wW=W.clone().applyQuaternion(Qt),tw=new T.Vector3();let onG=0;
@@ -741,9 +931,9 @@ function step(dt){
  V.addScaledVector(Fw,dt/m);P.addScaledVector(V,dt);awardGate(previous);
  tau.add(tw.applyQuaternion(iq));W.x+=tau.x/Iyy*dt;W.y+=tau.y/Izz*dt;W.z+=tau.z/Ixx*dt;
  const o=new T.Quaternion(W.x,W.y,W.z,0).premultiply(Qt);Qt.x+=o.x*.5*dt;Qt.y+=o.y*.5*dt;Qt.z+=o.z*.5*dt;Qt.w+=o.w*.5*dt;Qt.normalize();
- I={sp,rho,al,be,warn:!onG&&sp>10&&Math.abs(al)>asl-.04}}
+ I={sp,rho,al,be,separation,warn:!onG&&sp>10&&(asl-alphaAbs<3.5*D||separation>.18)}}
 function inf(){const f=new T.Vector3(0,0,-1).applyQuaternion(Qt),r=new T.Vector3(1,0,0).applyQuaternion(Qt),wW=W.clone().applyQuaternion(Qt),th=ct.th*(fuel>0?1:0)*(1+.12*profile.upgrades.engine);
- return{kt:I.sp*1.944*Math.sqrt(I.rho/1.225),ft:P.y*3.281,vs:V.y*196.85,hdg:(Math.atan2(f.x,-f.z)/D+360)%360,pitch:Math.asin(clamp(f.y,-1,1))/D,bank:-Math.asin(clamp(r.y,-1,1)),yaw:Math.atan2(-f.x,-f.z),
+ return{kt:I.sp*1.944*Math.sqrt(I.rho/1.225),ft:P.y*3.281,vs:V.y*196.85,hdg:(Math.atan2(f.x,-f.z)/D+360)%360,pitch:Math.asin(clamp(f.y,-1,1))/D,bank:-Math.asin(clamp(r.y,-1,1)),aoa:I.al/D,yaw:Math.atan2(-f.x,-f.z),
   tr:wW.y,slip:I.be||0,gs:Math.hypot(V.x,V.z)*1.944,trk:(Math.atan2(V.x,-V.z)/D+360)%360,rpm:fuel>0?700+ct.th*1950:0,fuel,oilp:22+ct.th*48,oilt:engT,egt:900+ct.th*560,hobbs:(12.3+(performance.now()/3.6e6)).toFixed(1).padStart(6,'0')}}
 
 // ================= entrada =================
@@ -778,14 +968,19 @@ function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/
  // superfícies de comando
  FL.rotation.x=FR.rotation.x=ct.fa*D;AR.rotation.x=-ct.a*.17;AL.rotation.x=ct.a*.17;EL.rotation.x=-(ct.e*.14+ct.tr*.07);RU.rotation.y=ct.r*.22;
  PR.rotation.z-=(fuel>0?8+ct.th*70:0)*animDt;bm.opacity=fuel>0?1-.75*ct.th:1;dsc.material.opacity=.06+.3*ct.th*(fuel>0?1:0);
+ if(cessnaParts.prop)cessnaParts.prop.rotation.z-=(fuel>0?8+ct.th*70:0)*animDt;
+ cessnaParts.ailerons.forEach(p=>{p.rotation.x=ct.a*.17*(p.position.x>0?-1:1)});
+ cessnaParts.flaps.forEach(p=>{p.rotation.x=-ct.fa*D});
+ cessnaParts.elevators.forEach(p=>{p.rotation.x=-(ct.e*.14+ct.tr*.07)});
+ if(cessnaParts.rudder)cessnaParts.rudder.rotation.y=ct.r*.22;
  const gs=V.length();[nw,...mw].forEach(w=>w.rotation.x-=gs/.2*animDt);NG.rotation.y=-ct.r*.5;
  // comandos da cabine
  YK.rotation.z=YK2.rotation.z=-ct.a*.5;YK.position.z=YK2.position.z=-.45+ct.e*.04;
  TH.position.z=-.93+(1-ct.th)*.12;PKH.position.z=-.93+ct.pk*.1;FLV.position.y=.075-ct.fl/30*.075;trimW.rotation.x=ct.tr*4;
  PL.position.z=-.62+ct.r*.018;PRg.position.z=-.62-ct.r*.018;
  beac.material.color.setRGB(now%1300<140?1:.25,.05,.05);
- EX.visible=!cockpit;
- const d=inf(),gy=GH(P.x,P.z),alt=Math.max(0,P.y-gy);
+ EX.visible=!cockpit&&!cessnaModelLoaded;CK.visible=cockpit;cessnaModelGroup.visible=!cockpit&&cessnaModelLoaded;
+ const d=inf(),gy=GH(P.x,P.z),alt=Math.max(0,P.y-gy);stallAlert.hidden=!I.warn;
  // sombra real acompanha a aeronave e o ponto de sombra no solo
  const sdx=-SUN.x/SUN.y*alt,sdz=-SUN.z/SUN.y*alt,half=clamp(20+Math.hypot(sdx,alt,sdz)*.55,20,110);
  const tx=P.x+sdx*.5,ty=gy+alt*.5,tz=P.z+sdz*.5;SC.left=-half;SC.right=half;SC.top=half;SC.bottom=-half;SC.updateProjectionMatrix();
@@ -801,7 +996,7 @@ function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/
  if(cam.fov!==targetFov){cam.fov=targetFov;cam.updateProjectionMatrix()}
  sky.position.copy(cam.position);
  if(fr%2==0){panel(d);if(!cockpit)flightCtx.drawImage(pc,0,0)}
- if(fr++%8==0)hu.textContent=`IAS ${d.kt.toFixed(0).padStart(3)} kt   ALT ${d.ft.toFixed(0)} ft   VS ${d.vs.toFixed(0)} fpm\nHDG ${d.hdg.toFixed(0).padStart(3,'0')}°   PITCH ${d.pitch.toFixed(0)}°   BANK ${(d.bank/D).toFixed(0)}°\nMOTOR ${d.rpm.toFixed(0)} RPM   COMB. ${(fuel*100).toFixed(0)}%   FLAPS ${ct.fl}°\n${ct.pk?'FREIO DE ESTACION.':''}${I.warn?'\n⚠ ALARME DE STALL':''}${fuel<=0?'\n⚠ SEM COMBUSTÍVEL':''}`;
+ if(fr++%8==0)hu.textContent=`IAS ${d.kt.toFixed(0).padStart(3)} kt   ALT ${d.ft.toFixed(0)} ft   VS ${d.vs.toFixed(0)} fpm\nHDG ${d.hdg.toFixed(0).padStart(3,'0')}°   PITCH ${d.pitch.toFixed(0)}°   AoA ${d.aoa.toFixed(1)}°\nBANK ${(d.bank/D).toFixed(0)}°   MOTOR ${d.rpm.toFixed(0)} RPM   FLAPS ${ct.fl}°\n${ct.pk?'FREIO DE ESTACION.':''}${I.warn?'\n⚠ ALARME DE STALL':''}${fuel<=0?'\n⚠ SEM COMBUSTÍVEL':''}`;
  if(ac){eo.frequency.value=35+ct.th*60;eg.gain.value=fuel>0?.05+.08*ct.th:0;hn.g.gain.value=I.warn&&!crashed?.03:0}
  ren.render(scn,cam)}
 reset();requestAnimationFrame(loop);
