@@ -342,7 +342,7 @@ const BCELL=.01,bCells=new Map(),bGroup=new T.Group(),bMat=new T.MeshLambertMate
 const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass.private.coffee/api/interpreter'];
 const lonX=lon=>(lon*D*EARTH-MX0)*KS,latZ=lat=>(MY0-Math.log(Math.tan(PI/4+lat*D/2))*EARTH)*KS;
 let bEnabled=mapCfg.bld,bTotal=0,bActive=0,bEp=0,bTimer=0,bErr=0,bLoaded=0;
-const BLOAD_MAX=8500,BLOAD_MIN=4500,BDROP=10500,BMAXACT=4,BMAXQ=7;let bRad=7000,bSm=.016;
+const BLOAD_MAX=14000,BLOAD_MIN=7500,BDROP=17000,BMAXACT=6,BMAXQ=20,BBLK=2;let bRad=11000,bSm=.016;const bBlocks=new Map();
 const BPAL=[[.84,.82,.78],[.76,.79,.84],[.88,.84,.74],[.72,.72,.74],[.92,.9,.86],[.8,.74,.68],[.9,.78,.7]];
 function bCell(i,j){const k=i+':'+j;let c=bCells.get(k);if(!c){c={k,i,j,state:'new',els:null,idx:0,pos:[],nor:[],col:[],uv:[],boxes:[],retry:0,d:1e9,mesh:null,count:0,dead:false,
  x0:lonX(i*BCELL),x1:lonX((i+1)*BCELL),z0:latZ((j+1)*BCELL),z1:latZ(j*BCELL)};bCells.set(k,c)}return c}
@@ -351,27 +351,43 @@ function clearBuildings(){for(const c of [...bCells.values()])dropCell(c);bTimer
 function setBuildingsEnabled(on){bEnabled=on;bGroup.visible=on;if(!on)for(const c of [...bCells.values()])dropCell(c);bTimer=0}
 // cache local (Cache API): células já baixadas voltam instantaneamente ao revisitar a área
 let bCache=null,bRR=0;try{if(window.caches)caches.open('cessna172-osm-bld-v1').then(cc=>{bCache=cc}).catch(()=>{})}catch(error){}
-const bKey=c=>'https://osm-cache.local/b/'+c.i+'_'+c.j;
-async function fetchBuildings(c){c.state='loading';bActive++;
+const bKey=bk=>'https://osm-cache.local/b2/'+bk.i+'_'+bk.j;
+function blockOf(c){const i=Math.floor(c.i/BBLK),j=Math.floor(c.j/BBLK),k=i+':'+j;let bk=bBlocks.get(k);if(!bk){bk={k,i,j,state:'idle',data:null,retry:0};bBlocks.set(k,bk)}return bk}
+function assignCell(c,bk){c.els=(bk.data.get(c.k)||[]);c.idx=0;c.blk=null;c.state='build'}
+// um pedido do Overpass cobre um bloco de BBLK x BBLK células; cada prédio vai para a célula do seu centro (sem duplicatas)
+async function fetchBlock(bk){bk.state='loading';bActive++;
  try{let j=null;
-  if(bCache){try{const hit=await bCache.match(bKey(c));if(hit)j=await hit.json()}catch(error){j=null}}
+  if(bCache){try{const hit=await bCache.match(bKey(bk));if(hit)j=await hit.json()}catch(error){j=null}}
   if(!j){
-   const q=`[out:json][timeout:25];way["building"](${(c.j*BCELL).toFixed(5)},${(c.i*BCELL).toFixed(5)},${((c.j+1)*BCELL).toFixed(5)},${((c.i+1)*BCELL).toFixed(5)});out geom qt;`;
-   const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),30000);
-   const r=await fetch(OVERPASS[(bEp+bRR++)%OVERPASS.length],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl.signal});clearTimeout(tm);
-   if(!r.ok)throw new Error('HTTP '+r.status);const txt=await r.text();j=JSON.parse(txt);
-   if(bCache&&j&&Array.isArray(j.elements))bCache.put(bKey(c),new Response(txt,{headers:{'Content-Type':'application/json'}})).catch(()=>{})}
-  if(c.dead)return;
-  c.els=(j.elements||[]).filter(e=>e.type==='way'&&e.geometry&&e.geometry.length>3).slice(0,6000);c.idx=0;c.state='build';bErr=0}
- catch(error){bEp++;bErr++;c.state='error';c.retry=performance.now()+(bErr>3?30000:5000);console.warn('Overpass falhou (tentando outro servidor):',error)}
- finally{bActive--}}
+   const q=`[out:json][timeout:40];way["building"](${(bk.j*BBLK*BCELL).toFixed(5)},${(bk.i*BBLK*BCELL).toFixed(5)},${((bk.j+1)*BBLK*BCELL).toFixed(5)},${((bk.i+1)*BBLK*BCELL).toFixed(5)});out geom qt;`;
+   // failover imediato: se um servidor estiver lento ou falhar, tenta o próximo sem esperar o ciclo de retentativa
+   let txt=null,lastErr=null;
+   for(let k=0;k<2&&txt===null;k++){
+    const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),k?30000:14000);
+    try{const r=await fetch(OVERPASS[(bEp+bRR++)%OVERPASS.length],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl.signal});
+     if(!r.ok)throw new Error('HTTP '+r.status);txt=await r.text();j=JSON.parse(txt)}
+    catch(error){lastErr=error;txt=null;j=null}
+    finally{clearTimeout(tm)}}
+   if(txt===null)throw lastErr||new Error('Overpass indisponível');
+   if(bCache&&j&&Array.isArray(j.elements))bCache.put(bKey(bk),new Response(txt,{headers:{'Content-Type':'application/json'}})).catch(()=>{})}
+  const data=new Map(),i0=bk.i*BBLK,j0=bk.j*BBLK;
+  for(const e of j.elements||[]){if(e.type!=='way'||!e.geometry||e.geometry.length<4)continue;
+   let sl=0,sa=0;for(const q of e.geometry){sl+=q.lon;sa+=q.lat}sl/=e.geometry.length;sa/=e.geometry.length;
+   const ci=clamp(Math.floor(sl/BCELL),i0,i0+BBLK-1),cj=clamp(Math.floor(sa/BCELL),j0,j0+BBLK-1),k=ci+':'+cj;let a=data.get(k);if(!a){a=[];data.set(k,a)}a.push(e)}
+  bk.data=data;bk.state='ready';bErr=0;
+  for(const c of bCells.values())if(c.blk===bk&&c.state==='loading'&&!c.dead)assignCell(c,bk)}
+ catch(error){bEp++;bErr++;bk.state='error';bk.retry=performance.now()+(bErr>3?20000:2500);
+  for(const c of bCells.values())if(c.blk===bk&&c.state==='loading'){c.state='new';c.blk=null}
+  console.warn('Overpass falhou (tentando outro servidor):',error)}
+ finally{bActive--;bTimer=0}}
+function bVert(c,x,y,z,nx,ny,nz,k,r,g,b,u,v){c.pos.push(x,y,z);c.nor.push(nx,ny,nz);c.col.push(r*k,g*k,b*k);c.uv.push(u,v)}
 function addBuilding(c,el,minAr){
  const tg=el.tags||{},pts=el.geometry.map(q=>[lonX(q.lon),latZ(q.lat)]),n0=pts.length;
  if(pts[0][0]===pts[n0-1][0]&&pts[0][1]===pts[n0-1][1])pts.pop();
  const n=pts.length;if(n<3)return;
  let cx=0,cz=0,ar=0,mnx=1e9,mxx=-1e9,mnz=1e9,mxz=-1e9;
  for(let i=0;i<n;i++){const a=pts[i],b=pts[(i+1)%n];cx+=a[0];cz+=a[1];ar+=a[0]*b[1]-b[0]*a[1];mnx=Math.min(mnx,a[0]);mxx=Math.max(mxx,a[0]);mnz=Math.min(mnz,a[1]);mxz=Math.max(mxz,a[1])}
- cx/=n;cz/=n;ar=Math.abs(ar)/2;if(ar<(minAr||20))return;
+ cx/=n;cz/=n;const sgn=ar>=0?1:-1;ar=Math.abs(ar)/2;if(ar<(minAr||20))return;
  const lx=cx*RWc+cz*RWs,lz=-cx*RWs+cz*RWc;if(hasRW&&Math.abs(lx)<RW.wid/2+70&&Math.abs(lz)<RW.len/2+200)return; // não constrói em cima da pista
  const hs=(Math.abs(el.id)%997)/997,kind=tg.building;
  let h=parseFloat(String(tg.height||'').replace(',','.'));
@@ -381,29 +397,41 @@ function addBuilding(c,el,minAr){
  let col=BPAL[Math.floor(hs*BPAL.length)%BPAL.length].slice();
  const hc=tg['building:colour'];if(typeof hc==='string'&&/^#[0-9a-f]{6}$/i.test(hc)){const v=hexRgb(hc);col=[v[0]/255*.6+.3,v[1]/255*.6+.3,v[2]/255*.6+.3]}
  else if(h>38)col=[.5+hs*.1,.64+hs*.1,.78+hs*.08];
- let geo;try{geo=new T.ExtrudeGeometry(new T.Shape(pts.map(p=>new T.Vector2(p[0]-cx,-(p[1]-cz)))),{depth:h,bevelEnabled:false})}catch(error){return} // forma relativa ao centro: UVs pequenas, sem perda de precisão
- geo.rotateX(-PI/2); // (x,-z) no plano da forma -> (x,z) no mundo; a extrusão sobe em +y
- const PA=geo.attributes.position.array,NA=geo.attributes.normal.array,UA=geo.attributes.uv.array,base=GH(cx,cz)-.3;
- for(let v=0;v<PA.length;v+=3){c.pos.push(PA[v]+cx,PA[v+1]+base,PA[v+2]+cz);const ny=NA[v+1],flat=Math.abs(ny)>.9,s=ny>.9?1.1:ny<-.9?.5:1,u=v/3*2;c.nor.push(NA[v],ny,NA[v+2]);c.col.push(col[0]*s,col[1]*s,col[2]*s);c.uv.push(flat?.06:UA[u],flat?.06:UA[u+1])}
- geo.dispose();
+ // triangulação do telhado (poligono convexo: leque; senão earcut). Feita antes de escrever qualquer vértice.
+ let tris=[];
+ try{let convex=true,sg=0;for(let i=0;i<n&&convex;i++){const a=pts[i],b=pts[(i+1)%n],d=pts[(i+2)%n],cr=(b[0]-a[0])*(d[1]-b[1])-(b[1]-a[1])*(d[0]-b[0]);if(Math.abs(cr)<1e-9)continue;const s_=cr>0?1:-1;if(sg===0)sg=s_;else if(s_!==sg)convex=false}
+  if(convex){for(let i=1;i<n-1;i++)tris.push(0,i,i+1)}
+  else{for(const f of T.ShapeUtils.triangulateShape(pts.map(p=>new T.Vector2(p[0],p[1])),[]))tris.push(f[0],f[1],f[2])}}catch(error){return}
+ const base=GH(cx,cz)-.3,y0=base,y1=base+h,r0=col[0],r1=col[1],r2=col[2];
+ for(let t=0;t<tris.length;t+=3){let a=pts[tris[t]],b=pts[tris[t+1]],d=pts[tris[t+2]];
+  if((b[1]-a[1])*(d[0]-a[0])-(b[0]-a[0])*(d[1]-a[1])<0){const tmp=b;b=d;d=tmp}
+  for(const q of [a,b,d])bVert(c,q[0],y1,q[1],0,1,0,1.1,r0,r1,r2,.06,.06)}
+ let acc=0;
+ for(let i=0;i<n;i++){const a=pts[i],b=pts[(i+1)%n],ex=b[0]-a[0],ez=b[1]-a[1],len=Math.hypot(ex,ez);if(len<1e-3)continue;
+  const nx=sgn*ez/len,nz=-sgn*ex/len,ua=acc,ub=acc+len,vb=1,vt=1-h;acc=ub;
+  // A=(a,baixo) B=(b,baixo) C=(b,cima) D=(a,cima); a ordem depende do sentido do contorno para a face visível apontar para fora
+  const A=[a[0],y0,a[1],ua,vb],B=[b[0],y0,b[1],ub,vb],C=[b[0],y1,b[1],ub,vt],D=[a[0],y1,a[1],ua,vt],
+   order=sgn>0?[A,C,B,A,D,C]:[A,B,C,A,C,D];
+  for(const q of order)bVert(c,q[0],q[1],q[2],nx,0,nz,1,r0,r1,r2,q[3],q[4])}
  const poly=[];for(const q of pts)poly.push(q[0],q[1]);c.boxes.push([mnx,mxx,mnz,mxz,base+.3+h,base,poly]);c.count++;bTotal++}
 function finishCell(c){
  if(c.pos.length){const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(c.pos,3));g.setAttribute('normal',new T.Float32BufferAttribute(c.nor,3));g.setAttribute('color',new T.Float32BufferAttribute(c.col,3));g.setAttribute('uv',new T.Float32BufferAttribute(c.uv,2));g.computeBoundingSphere();
   const mesh=new T.Mesh(g,bMat);mesh.castShadow=true;mesh.receiveShadow=true;bGroup.add(mesh);c.mesh=mesh}
  c.pos=[];c.nor=[];c.col=[];c.uv=[];c.els=null;c.state='ready';bLoaded++}
-function bMinArea(d){return d>6000?150:d>4200?60:d>2800?30:20} // longe: ignora construções pequenas (menos memória e geometria)
+function bMinArea(d){return d>11000?420:d>8500?240:d>6000?130:d>4200?55:d>2800?30:20} // longe: ignora construções pequenas (menos memória e geometria)
 function updateBuildings(dt){
- if(!bEnabled||!mapReady)return;
+ if(!bEnabled)return; // não espera mais o mapa terminar: prédios baixam e são construídos junto com as imagens
  const alt=P.y-GH(P.x,P.z);bGroup.visible=alt<5000;
  // orçamento de construção por quadro adaptado ao FPS: com FPS alto constrói mais rápido, com FPS baixo alivia
  bSm+=(Math.min(dt,.1)-bSm)*.08;
- const budget=bSm<.0185?7:bSm<.023?4:bSm<.03?2:1,t0=performance.now();
+ // durante a tela de carregamento (jogo pausado) pode gastar quase o quadro inteiro; em voo, 10/6/3/1,5 ms conforme o FPS
+ const budget=!mapReady||tpPending?14:bSm<.0185?10:bSm<.023?6:bSm<.03?3:1.5,t0=performance.now();
  while(performance.now()-t0<budget){let bc=null;
   for(const c of bCells.values())if(c.state==='build'&&(!bc||c.d<bc.d))bc=c; // sempre a célula mais próxima primeiro
   if(!bc)break;const minAr=bMinArea(bc.d);
   while(bc.idx<bc.els.length&&performance.now()-t0<budget)addBuilding(bc,bc.els[bc.idx++],minAr);
   if(bc.idx>=bc.els.length)finishCell(bc)}
- bTimer-=dt;if(bTimer>0)return;bTimer=.25;
+ bTimer-=dt;if(bTimer>0)return;bTimer=.1;
  if(bSm>.032)bRad=Math.max(BLOAD_MIN,bRad-500);else if(bSm<.019&&bRad<BLOAD_MAX)bRad=Math.min(BLOAD_MAX,bRad+100); // raio de carga adaptativo
  const now=performance.now(),myy=MY0-P.z/KS,lon=(MX0+P.x/KS)/EARTH/D,lat=(2*Math.atan(Math.exp(myy/EARTH))-PI/2)/D,ci=Math.floor(lon/BCELL),cj=Math.floor(lat/BCELL);
  if(alt<5000){
@@ -414,11 +442,17 @@ function updateBuildings(dt){
  for(const c of [...bCells.values()]){const dx=(c.x0+c.x1)/2-P.x,dz=(c.z0+c.z1)/2-P.z;c.d=Math.hypot(dx,dz);
   if(c.d>BDROP){dropCell(c);continue} // descarta o que ficou muito longe (libera geometria da GPU e memória)
   if(c.state==='build')queued++;
-  if(c.d<bRad&&(c.state==='new'||(c.state==='error'&&now>c.retry))){const cosA=c.d>1?(dx*fx+dz*fz)/c.d:1;c.sc=c.d*(1-.4*Math.max(0,cosA));cand.push(c)}} // prioriza o que está à frente
+  if(c.d<bRad&&c.state==='new'){const cosA=c.d>1?(dx*fx+dz*fz)/c.d:1;c.sc=c.d*(1-.4*Math.max(0,cosA));cand.push(c)}} // prioriza o que está à frente
  cand.sort((a,b)=>a.sc-b.sc);
- for(const c of cand){if(bActive>=BMAXACT||queued+bActive>=BMAXQ)break;fetchBuildings(c)}}
+ for(const c of cand){const bk=blockOf(c);
+  if(bk.state==='ready'){assignCell(c,bk);continue}
+  if(bk.state==='loading'){c.state='loading';c.blk=bk;continue}
+  if(bk.state==='error'&&now<bk.retry)continue;
+  if(bActive>=BMAXACT||queued>=BMAXQ)continue;
+  fetchBlock(bk);c.state='loading';c.blk=bk}
+ for(const [k,bk] of bBlocks){if(bk.state==='loading')continue;const bx=lonX((bk.i*BBLK+BBLK/2)*BCELL)-P.x,bz=latZ((bk.j*BBLK+BBLK/2)*BCELL)-P.z;if(Math.hypot(bx,bz)>BDROP+4000)bBlocks.delete(k)}}
 function hitBuilding(x,y,z){if(!bEnabled||!bGroup.visible)return false;
- for(const c of bCells.values()){if(c.state!=='ready'||x<c.x0||x>c.x1||z<c.z0||z>c.z1)continue;
+ for(const c of bCells.values()){if(c.state!=='ready'||x<c.x0-120||x>c.x1+120||z<c.z0-120||z>c.z1+120)continue;
   for(const b of c.boxes)if(x>b[0]&&x<b[1]&&z>b[2]&&z<b[3]&&y<b[4]&&y>b[5]-3&&inPoly(b[6],x,z))return b}
  return false}
 // ---- nuvens
