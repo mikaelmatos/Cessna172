@@ -916,6 +916,53 @@ $('skinReset').addEventListener('click',()=>{$('skinBase').value='#e7e4dc';
 function syncSkinInputs(){const colors=profile.customColors||{base:'#e7e4dc',stripe:'#183451',accent:'#78a5cc',wing:'#e7e4dc'};
  $('skinBase').value=colors.base;$('skinStripeDark').value=colors.stripe;$('skinStripeLight').value=colors.accent;$('skinWing').value=colors.wing||'#e7e4dc'}
 applyPaint(profile.paint);updateMoney();
+/*DESTROCOS-INICIO*/
+// ================= destroços: ao cair, cada peça do modelo vira um corpo rígido independente =================
+const debris=[],debrisFocus=new T.Vector3(),dbV=new T.Vector3(),dbR=new T.Vector3(),dbN=new T.Vector3(),dbRN=new T.Vector3(),dbT=new T.Vector3(),dbQ=new T.Quaternion(),dbM=new T.Matrix4();
+let debrisMain=null;
+const partShown=o=>{for(;o;o=o.parent)if(!o.visible)return false;return true};
+function clearDebris(){for(const b of debris)scn.remove(b.body);debris.length=0;debrisMain=null}
+function breakApart(v0,w0){
+ AC.position.copy(P);AC.quaternion.copy(Qt);AC.updateMatrixWorld(true);
+ const wWorld=w0.clone().applyQuaternion(Qt),speed=v0.length(),parts=[];
+ AC.traverse(o=>{if(o.isMesh&&o!==hull&&o.geometry&&partShown(o))parts.push(o)});
+ for(const mesh of parts){
+  const geo=mesh.geometry;if(!geo.boundingBox)geo.computeBoundingBox();const bb=geo.boundingBox;if(!bb||bb.isEmpty())continue;
+  // o corpo nasce no centro da peça; a malha é recolocada para ficar exatamente onde estava no avião
+  const c=bb.getCenter(new T.Vector3()).applyMatrix4(mesh.matrixWorld),body=new T.Group(),part=mesh.clone(false);
+  body.position.copy(c);part.matrixAutoUpdate=false;part.matrix.copy(mesh.matrixWorld).premultiply(dbM.makeTranslation(-c.x,-c.y,-c.z));body.add(part);
+  // 8 cantos da caixa da peça = pontos de contato com o solo
+  const corners=[];let ex=0,ey=0,ez=0,rb=0;
+  for(let i=0;i<8;i++){const k=new T.Vector3(i&1?bb.max.x:bb.min.x,i&2?bb.max.y:bb.min.y,i&4?bb.max.z:bb.min.z).applyMatrix4(part.matrix);
+   corners.push(k);ex=Math.max(ex,Math.abs(k.x));ey=Math.max(ey,Math.abs(k.y));ez=Math.max(ez,Math.abs(k.z));rb=Math.max(rb,k.length())}
+  // herda a velocidade do avião no ponto da peça + um empurrão aleatório (peças menores voam mais longe)
+  const kick=(2+speed*.12)*(.3+rn()*.7)/(1+rb*.35),spin=(2+speed*.08)/(1+rb*.5),
+   v=new T.Vector3().crossVectors(wWorld,c.clone().sub(P)).add(v0).add(new T.Vector3(rn()-.5,rn()*.9+.1,rn()-.5).normalize().multiplyScalar(kick)),
+   w=new T.Vector3(rn()-.5,rn()-.5,rn()-.5).multiplyScalar(2*spin).add(wWorld),
+   b={body,corners,rb,v,w,inertia:Math.max(1e-6,(ex*ex+ey*ey+ez*ez)/3),drag:.04+.3/(1+rb*2),rest:0,sleep:false};
+  debris.push(b);scn.add(body);if(!debrisMain||rb>debrisMain.rb)debrisMain=b}
+ if(debrisMain)debrisFocus.copy(debrisMain.body.position)}
+function stepDebris(dt){
+ const n=Math.max(1,Math.ceil(dt*90)),h=dt/n;
+ for(let s=0;s<n;s++)for(const b of debris){
+  if(b.sleep)continue;
+  const p=b.body.position,q=b.body.quaternion;
+  b.v.y-=g*h;b.v.multiplyScalar(1-b.drag*h);p.addScaledVector(b.v,h);
+  dbQ.set(b.w.x,b.w.y,b.w.z,0).multiply(q);q.set(q.x+dbQ.x*.5*h,q.y+dbQ.y*.5*h,q.z+dbQ.z*.5*h,q.w+dbQ.w*.5*h).normalize();
+  const gh=GH(p.x,p.z)+.05;if(p.y-b.rb>gh+.3)continue; // longe do chão: só voa
+  const nx=(GH(p.x-1.5,p.z)-GH(p.x+1.5,p.z))/3,nz=(GH(p.x,p.z-1.5)-GH(p.x,p.z+1.5))/3;dbN.set(nx,1,nz).normalize();
+  let pen=0;
+  for(let it=0;it<2;it++)for(const cn of b.corners){
+   dbR.copy(cn).applyQuaternion(q);const depth=gh-(p.y+dbR.y);if(depth<=0)continue;if(!it)pen=Math.max(pen,depth);
+   dbV.crossVectors(b.w,dbR).add(b.v);const vn=dbV.dot(dbN);if(vn>=0)continue;
+   dbRN.crossVectors(dbR,dbN);const j=-(1+(vn<-3?.25:0))*vn/(1+dbRN.lengthSq()/b.inertia);
+   b.v.addScaledVector(dbN,j);b.w.addScaledVector(dbRN,j/b.inertia);
+   dbT.copy(dbV).addScaledVector(dbN,-vn);const vt=dbT.length(); // atrito
+   if(vt>1e-3){dbT.multiplyScalar(-Math.min(.6*j,.25*vt)/vt);b.v.add(dbT);b.w.addScaledVector(dbRN.crossVectors(dbR,dbT),1/b.inertia)}}
+  if(pen>0){p.y+=Math.min(pen,.4)*.8;b.w.multiplyScalar(1-2.5*h);
+   if(b.v.lengthSq()<.05&&b.w.lengthSq()<.15){b.rest+=h;if(b.rest>.5){b.sleep=true;b.v.set(0,0,0);b.w.set(0,0,0)}}else b.rest=0}}
+ if(debrisMain)debrisFocus.copy(debrisMain.body.position)}
+/*DESTROCOS-FIM*/
 let checkpoint=0,courseLaps=0;
 function updateMission(text){mission.textContent=text||`Portão ${checkpoint+1}/3 · voe pelo centro do arco verde → vermelho`}
 updateMission();
@@ -928,8 +975,8 @@ function awardGate(previous){if(checkpoint>=gates.length||V.z>=-8)return;const g
   updateMission(`Percurso completo · bônus de ${formatMoney(300)} · volta ${courseLaps+1}`)}
  else updateMission(`Portão atravessado · +${formatMoney(200)} · próximo: ${checkpoint+1}/3`);
  persistProfile();updateMoney()}
-function crash(){if(crashed)return;crashed=true;V.set(0,0,0);W.set(0,0,0);deathTime=0;deathCameraStart.copy(cam.position);deathScreen.classList.add('active');deathScreen.setAttribute('aria-hidden','false')}
-function reset(){P.set(0,3.2,620);V.set(0,0,0);W.set(0,0,0);Qt.identity();cq.copy(Qt);Object.assign(ct,{e:0,a:0,r:0,th:0,fl:0,fa:0,tr:0,br:0,pk:1});separation=0;simTime=0;I={sp:0,rho:1.225,al:0,be:0,warn:0,separation:0};crashed=false;fuel=.92;engT=110;checkpoint=0;
+function crash(){if(crashed)return;crashed=true;const v0=V.clone(),w0=W.clone();V.set(0,0,0);W.set(0,0,0);breakApart(v0,w0);deathTime=0;deathCameraStart.copy(cam.position);deathScreen.classList.add('active');deathScreen.setAttribute('aria-hidden','false')}
+function reset(){clearDebris();P.set(0,3.2,620);V.set(0,0,0);W.set(0,0,0);Qt.identity();cq.copy(Qt);Object.assign(ct,{e:0,a:0,r:0,th:0,fl:0,fa:0,tr:0,br:0,pk:1});separation=0;simTime=0;I={sp:0,rho:1.225,al:0,be:0,warn:0,separation:0};crashed=false;fuel=.92;engT=110;checkpoint=0;
  gates.forEach((gate,i)=>gate.position.set(gateData[i].x,gateData[i].y,gateData[i].z));updateMission();ms.style.display='none';deathTime=0;deathScreen.classList.remove('active');deathScreen.setAttribute('aria-hidden','true')}
 function step(dt){
  simTime+=dt;
@@ -1007,7 +1054,7 @@ function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/
  document.body.classList.toggle('cockpit',cockpit);
  if(paused||crashed)acc=0;else{ctl(dt);acc+=dt;while(acc>=1/120){step(1/120);acc-=1/120}
   fuel=Math.max(0,fuel-dt*(.00003+.00035*ct.th*(1+.12*profile.upgrades.engine)*(fuel>0?1:0)));engT+=((fuel>0?120+ct.th*70*(1+.12*profile.upgrades.engine):50)-engT)*Math.min(1,dt*.05)}
- upT();AC.position.copy(P);AC.quaternion.copy(Qt);
+ if(debris.length&&!paused)stepDebris(dt);upT();AC.position.copy(P);AC.quaternion.copy(Qt);
  const animDt=crashed?dt*.25:dt;
  // superfícies de comando
  FL.rotation.x=FR.rotation.x=ct.fa*D;AR.rotation.x=-ct.a*.17;AL.rotation.x=ct.a*.17;EL.rotation.x=-(ct.e*.14+ct.tr*.07);RU.rotation.y=ct.r*.22;
@@ -1025,12 +1072,12 @@ function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/
  beac.material.color.setRGB(now%1300<140?1:.25,.05,.05);
  const importedCockpitReady=cessnaResourcesLoaded&&cessnaModelLoaded;
  document.body.classList.toggle('cessna-interior',cockpit&&importedCockpitReady);
- EX.visible=!cockpit&&cessnaModelFailed;CK.visible=cockpit&&!importedCockpitReady&&(cessnaResourcesLoaded||cessnaModelFailed);cessnaModelGroup.visible=importedCockpitReady;
+ const intact=!debris.length;EX.visible=intact&&!cockpit&&cessnaModelFailed;CK.visible=intact&&cockpit&&!importedCockpitReady&&(cessnaResourcesLoaded||cessnaModelFailed);cessnaModelGroup.visible=intact&&importedCockpitReady;
  loadingSpinner.visible=!cessnaModelFailed&&!cessnaResourcesLoaded;
- const d=inf(),gy=GH(P.x,P.z),alt=Math.max(0,P.y-gy);stallAlert.hidden=!I.warn;
+ const d=inf(),gy=GH(P.x,P.z),alt=Math.max(0,P.y-gy),FP=debrisMain?debrisFocus:P;stallAlert.hidden=!I.warn;
  // sombra real acompanha a aeronave e o ponto de sombra no solo
  const sdx=-SUN.x/SUN.y*alt,sdz=-SUN.z/SUN.y*alt,half=clamp(20+Math.hypot(sdx,alt,sdz)*.55,20,110);
- const tx=P.x+sdx*.5,ty=gy+alt*.5,tz=P.z+sdz*.5;SC.left=-half;SC.right=half;SC.top=half;SC.bottom=-half;SC.updateProjectionMatrix();
+ const tx=FP.x+sdx*.5,ty=GH(FP.x,FP.z)+alt*.5,tz=FP.z+sdz*.5;SC.left=-half;SC.right=half;SC.top=half;SC.bottom=-half;SC.updateProjectionMatrix();
  sun.target.position.set(tx,ty,tz);sun.position.set(tx+SUN.x*200,ty+SUN.y*200,tz+SUN.z*200);sun.target.updateMatrixWorld();
  sh.position.set(P.x,gy+.12,P.z);sh.rotation.y=d.yaw;sh.material.opacity=.4*clamp((alt-90)/60,0,1)*Math.max(0,1-alt/400);
  cls.forEach(s=>{s.position.x-=Math.round((s.position.x-P.x)/36000)*36000;s.position.z-=Math.round((s.position.z-P.z)/36000)*36000});
@@ -1038,7 +1085,7 @@ function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/
  else{cq.slerp(Qt,1-Math.exp(-5*dt));const off=new T.Vector3(0,0,13*zm).applyEuler(new T.Euler(-(lp+.18),ly,0,'YXZ')).applyQuaternion(cq);cam.position.copy(P).add(off);cam.up.set(0,1,0);cam.lookAt(new T.Vector3(0,1.5,-6).applyQuaternion(cq).add(P))}
  const fv=cockpit?(importedCockpitReady?70:72)*zm:60;let targetFov=fv;
  if(crashed){deathTime+=dt*.35;const progress=clamp(deathTime/2.5,0,1),ease=progress*progress*(3-2*progress),offset=new T.Vector3(4+3*ease,5,18).applyQuaternion(Qt);
-  cam.position.lerpVectors(deathCameraStart,P.clone().add(offset),ease);cam.up.set(0,1,0);cam.lookAt(P);targetFov=fv-(fv-48)*ease}
+  cam.position.lerpVectors(deathCameraStart,FP.clone().add(offset),ease);cam.up.set(0,1,0);cam.lookAt(FP);targetFov=fv-(fv-48)*ease}
  cam.position.y=Math.max(cam.position.y,GH(cam.position.x,cam.position.z)+1.5);
  if(cam.fov!==targetFov){cam.fov=targetFov;cam.updateProjectionMatrix()}
  loadingSpinner.position.copy(P).add(new T.Vector3(0,1.5,0));loadingSpinner.quaternion.copy(cam.quaternion);spinnerRing.rotation.z+=dt*4;
