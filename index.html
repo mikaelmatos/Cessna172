@@ -309,8 +309,8 @@ function refreshAirframeTexture(color){const w=airframeCanvas.width,h=airframeCa
 const ZY=(z,z0,z1,h)=>(z-z0)/(z1-z0)*h;
 
 // ================= fuselagem =================
-const secs=[[-2.56,.30,.34,-.16,2.1],[-2.53,.39,.43,-.24,2.2],[-2.46,.48,.51,-.32,2.4],[-2.30,.54,.58,-.43,2.5],[-1.90,.565,.59,-.49,2.6],
- [-1.25,.575,.48,-.52,2.5],[-1.12,.58,.50,-.54,2.6],[-.95,.585,.62,-.55,2.7],[-.80,.585,.79,-.55,2.8],[-.62,.585,.87,-.55,2.8],[-.40,.585,.88,-.55,2.8],
+const secs=[[-2.56,.32,.34,-.16,2.1],[-2.53,.40,.43,-.24,2.2],[-2.46,.49,.51,-.32,2.4],[-2.30,.54,.56,-.43,2.5],[-1.90,.565,.54,-.49,2.6],
+ [-1.25,.575,.50,-.52,2.5],[-1.12,.58,.52,-.54,2.6],[-.95,.585,.62,-.55,2.7],[-.80,.585,.79,-.55,2.8],[-.62,.585,.87,-.55,2.8],[-.40,.585,.88,-.55,2.8],
  [.60,.58,.88,-.55,2.8],[1.10,.565,.85,-.53,2.8],[1.50,.50,.70,-.45,2.6],[1.90,.40,.56,-.34,2.4],
  [2.60,.32,.50,-.27,2.3],[3.50,.23,.44,-.15,2.2],[4.50,.14,.38,-.02,2.1],[5.40,.07,.31,.09,2.0],[5.90,.035,.27,.15,2.0]];
 const allR=interp(secs,6),EPS=1e-6;
@@ -320,7 +320,12 @@ const CZ0=-1.25,CZ1=1.9,WZ0=-2.56,WZ1=-1.25,AZ0=1.9,AZ1=5.9;
 const WIN=[{m:1,p:[[8,-.40],[45,-.62],[45,.52],[8,.52]]},{m:1,p:[[8,.72],[45,.72],[47,1.42],[10,1.28]]},{m:0,p:[[50,-1.12],[130,-1.12],[130,-.50],[50,-.50]]},{m:0,p:[[60,1.28],[120,1.28],[120,1.82],[60,1.82]]}];
 const DOOR=[[-12,-.50],[46,-.64],[46,.68],[-12,.68]];
 function polyP(x,pts,mir,W,H,z0,z1){x.beginPath();pts.forEach(([a,z],i)=>{const X=(mir?180-a:a)/360*W,Y=ZY(z,z0,z1,H);i?x.lineTo(X,Y):x.moveTo(X,Y)});x.closePath()}
-function eachWin(x,W,H,fn){for(const wn of WIN)for(const mir of wn.m?[0,1]:[0]){polyP(x,wn.p,mir,W,H,CZ0,CZ1);fn(mir)}}
+function windowP(x,pts,mir,W,H,z0,z1){const p=pts.map(([a,z])=>[(mir?180-a:a)/360*W,ZY(z,z0,z1,H)]),radius=10;
+ const toward=(a,b)=>{const d=Math.hypot(b[0]-a[0],b[1]-a[1]),t=Math.min(.3,radius/Math.max(d,1));return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]};
+ const incoming=p.map((q,i)=>toward(q,p[(i+p.length-1)%p.length])),outgoing=p.map((q,i)=>toward(q,p[(i+1)%p.length]));
+ x.beginPath();x.moveTo(...outgoing[0]);for(let i=1;i<p.length;i++){x.lineTo(...incoming[i]);x.quadraticCurveTo(...p[i],...outgoing[i])}
+ x.lineTo(...incoming[0]);x.quadraticCurveTo(...p[0],...outgoing[0]);x.closePath()}
+function eachWin(x,W,H,fn){for(const wn of WIN)for(const mir of wn.m?[0,1]:[0]){windowP(x,wn.p,mir,W,H,CZ0,CZ1);fn(mir)}}
 const band=(x,W,H,a1,a2,col)=>{x.fillStyle=col;if(a1<0){x.fillRect((a1+360)/360*W,0,(360-a1-360)/360*W+(-a1)/360*W*0,H);x.fillRect(0,0,a2/360*W,H);return}x.fillRect(a1/360*W,0,(a2-a1)/360*W,H)};
 function stripes(x,W,H){band(x,W,H,200,340,'#e7e4dc');band(x,W,H,340,356,'#183451');band(x,W,H,332,338,'#78a5cc');band(x,W,H,184,200,'#183451');band(x,W,H,202,208,'#78a5cc')}
 // textura externa da cabine (pintura + frisos das portas + molduras das janelas)
@@ -328,7 +333,11 @@ const cabTex=(()=>{const W=2048,H=1024,c=cv(W,H),x=c.getContext('2d');x.fillStyl
  const sheen=x.createLinearGradient(0,0,0,H);sheen.addColorStop(0,'rgba(255,255,255,.13)');sheen.addColorStop(.48,'rgba(255,255,255,0)');sheen.addColorStop(1,'rgba(25,34,43,.13)');x.fillStyle=sheen;x.fillRect(0,0,W,H);
  x.fillStyle='#17181a';x.fillRect(40/360*W,0,100/360*W,ZY(-1.12,CZ0,CZ1,H));
  x.strokeStyle='#8b9096';x.lineWidth=3;[0,1].forEach(m=>{polyP(x,DOOR,m,W,H,CZ0,CZ1);x.stroke()});
- x.strokeStyle='#2a2d30';x.lineWidth=14;eachWin(x,W,H,()=>x.stroke());
+ x.strokeStyle='rgba(28,32,35,.92)';x.lineWidth=9;eachWin(x,W,H,()=>x.stroke());
+ x.strokeStyle='rgba(209,211,208,.88)';x.lineWidth=2;eachWin(x,W,H,()=>x.stroke());
+ const mullionX=90/360*W,yTop=ZY(-.50,CZ0,CZ1,H),yBottom=ZY(-1.12,CZ0,CZ1,H);
+ x.lineCap='round';x.strokeStyle='rgba(34,39,43,.9)';x.lineWidth=8;x.beginPath();x.moveTo(mullionX,yTop);x.lineTo(mullionX,yBottom);x.stroke();
+ x.strokeStyle='rgba(200,204,205,.85)';x.lineWidth=2;x.beginPath();x.moveTo(mullionX,yTop);x.lineTo(mullionX,yBottom);x.stroke();
  for(const sideX of [250,1274]){const cy=ZY(.72,CZ0,CZ1,H);x.save();x.textAlign='center';x.textBaseline='middle';x.font='bold 92px Arial,sans-serif';
   x.lineWidth=8;x.strokeStyle='rgba(250,248,241,.96)';x.strokeText('PR-MKM',sideX,cy);x.fillStyle='#183451';x.fillText('PR-MKM',sideX,cy);
   x.font='bold 24px sans-serif';x.fillStyle='#34495d';x.fillText('CESSNA 172 · BRASIL',sideX,cy+54);
@@ -342,7 +351,10 @@ const cabTex=(()=>{const W=2048,H=1024,c=cv(W,H),x=c.getContext('2d');x.fillStyl
 const holeTex=(()=>{const W=2048,H=1024,c=cv(W,H),x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);x.fillStyle='#000';eachWin(x,W,H,()=>x.fill());
  x.fillStyle='#fff';x.fillRect(87/360*W,ZY(-1.13,CZ0,CZ1,H),6/360*W,ZY(-.49,CZ0,CZ1,H)-ZY(-1.13,CZ0,CZ1,H));return tex(c)})();
 const glassTex=(()=>{const W=2048,H=1024,c=cv(W,H),x=c.getContext('2d');x.fillStyle='rgba(120,165,195,.30)';eachWin(x,W,H,()=>x.fill());
- x.clearRect(87/360*W,ZY(-1.13,CZ0,CZ1,H),6/360*W,ZY(-.49,CZ0,CZ1,H)-ZY(-1.13,CZ0,CZ1,H));return tex(c)})();
+ x.clearRect(87/360*W,ZY(-1.13,CZ0,CZ1,H),6/360*W,ZY(-.49,CZ0,CZ1,H)-ZY(-1.13,CZ0,CZ1,H));
+ const mullionX=90/360*W;x.lineCap='round';x.strokeStyle='rgba(30,37,42,.78)';x.lineWidth=7;
+ x.beginPath();x.moveTo(mullionX,ZY(-.50,CZ0,CZ1,H));x.lineTo(mullionX,ZY(-1.12,CZ0,CZ1,H));x.stroke();
+ x.strokeStyle='rgba(235,244,249,.42)';x.lineWidth=2;x.beginPath();x.moveTo(mullionX-3,ZY(-.55,CZ0,CZ1,H));x.lineTo(mullionX-3,ZY(-1.08,CZ0,CZ1,H));x.stroke();return tex(c)})();
 // textura do forro interno
 const intTex=(()=>{const W=2048,H=1024,c=cv(W,H),x=c.getContext('2d');x.fillStyle='#77756e';x.fillRect(0,0,W,H);
  const B=(a1,a2,col)=>{x.fillStyle=col;x.fillRect(a1/360*W,0,(a2-a1)/360*W,H)};
@@ -450,10 +462,10 @@ function wheel(){const g=new T.Group(),pr=[[.11,-.058],[.15,-.066],[.19,-.05],[.
  g.add(new T.Mesh(new T.LatheGeometry(pr,28).rotateZ(PI/2),RB));cy(.115,.115,.125,0,0,0,ALU,g,'x',20);cy(.04,.04,.14,0,0,0,CH,g,'x',12);
  for(let i=0;i<5;i++){const a=i/5*2*PI;cy(.011,.011,.136,0,Math.sin(a)*.075,Math.cos(a)*.075,DK,g,'x',8)}return g}
 const NG=new T.Group();NG.position.set(0,-.4,-1.4);AC.add(NG);
-cy(.032,.032,.5,0,-.25,0,CH,NG);cy(.045,.045,.16,0,-.08,0,DK,NG);[-1,1].forEach(s=>bx(.02,.14,.06,s*.07,-.48,0,DK,NG));cy(.014,.014,.16,0,-.55,0,ALU,NG,'x',8);bx(.02,.04,.14,0,-.3,.07,DK,NG);
-const nw=wheel();nw.position.set(0,-.55,0);NG.add(nw);
-const mw=[-1,1].map(s=>{rod([s*.5,-.32,.3],[s*1.3,-.9,.3],.022,.065,DK);bx(.18,.07,.24,s*.52,-.3,.3,WH);cy(.02,.02,.2,s*1.34,-.95,.3,ALU,AC,'x',8);
- const w=wheel();w.position.set(s*1.35,-.95,.3);AC.add(w);bx(.035,.09,.07,s*1.27,-.9,.34,ALU);bx(.06,.03,.1,s*1.3,-.87,.3,DK);return w});
+cy(.032,.032,.5,0,-.25,0,CH,NG);cy(.045,.045,.16,0,-.08,0,DK,NG);[-1,1].forEach(s=>bx(.02,.14,.06,s*.07,-.41,0,DK,NG));cy(.014,.014,.16,0,-.48,0,ALU,NG,'x',8);bx(.02,.04,.14,0,-.3,.07,DK,NG);
+const nw=wheel();nw.position.set(0,-.48,0);NG.add(nw);
+const mw=[-1,1].map(s=>{rod([s*.5,-.32,.3],[s*1.3,-.83,.3],.022,.065,DK);bx(.18,.07,.24,s*.52,-.3,.3,WH);cy(.02,.02,.2,s*1.34,-.88,.3,ALU,AC,'x',8);
+ const w=wheel();w.position.set(s*1.35,-.88,.3);AC.add(w);bx(.035,.09,.07,s*1.27,-.83,.34,ALU);bx(.06,.03,.1,s*1.3,-.8,.3,DK);return w});
 
 // ================= hélice e spinner =================
 const PR=new T.Group();PR.position.set(0,.1,-2.62);AC.add(PR);
