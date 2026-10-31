@@ -8,6 +8,10 @@ html{scroll-padding-top:env(safe-area-inset-top,0px)}
 html,body{height:100%;margin:0;overflow:hidden}
 body{background:var(--bg);color:var(--fg);font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace}
 body>canvas{position:fixed;inset:0}
+#poiLayer{position:fixed;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+.poi{position:absolute;left:0;top:0;display:flex;align-items:center;gap:5px;height:24px;white-space:nowrap;will-change:transform,opacity;font:600 11px/1 system-ui,-apple-system,Segoe UI,sans-serif;color:#fff}
+.poi i{font-style:normal;flex:none;width:24px;height:24px;border-radius:50%;border:2px solid #fff;box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1;box-shadow:0 2px 6px rgba(0,0,0,.45)}
+.poi span{padding:4px 7px;border-radius:6px;background:rgba(8,16,28,.78);box-shadow:0 2px 6px rgba(0,0,0,.35)}
 .p{position:fixed;background:rgba(8,16,28,.76);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);padding:8px 12px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.2);z-index:2}
 #hud{left:10px;top:calc(150px + env(safe-area-inset-top,0px));white-space:pre}
 #help{right:10px;top:calc(10px + env(safe-area-inset-top,0px));max-width:300px}
@@ -92,7 +96,9 @@ body:not(.cockpit) #mission{bottom:274px}
  <label id="mapDateRow">Data da imagem MODIS<input id="mapDate" type="date"></label>
  <label><input id="mapProc" type="checkbox"> Pista 3D sobreposta (desligue com imagens de alta resolução, que já mostram a pista real)</label>
  <label><input id="mapBld" type="checkbox"> Prédios e construções 3D (OpenStreetMap, carregados conforme você voa)</label>
- <div class="skinActions"><button id="mapApply">Aplicar</button></div>
+ <label><input id="mapPoi" type="checkbox"> Nomes de locais (escolas, mercados, hospitais…) com marcadores abaixo de 600 ft de altura (OpenStreetMap)</label>
+ <div class="skinActions"><button id="mapApply">Aplicar</button><button id="mapCacheClear" type="button">Limpar cache offline</button></div>
+ <p id="mapCache"></p>
  <p id="mapStatus"></p>
  <p>Elevação: SRTM (NASA) via AWS Terrain Tiles. As imagens da NASA (GIBS) têm 250–500 m por pixel: bom para o relevo e a costa, mas borrado de perto. Para ver a cidade e a pista com nitidez, use Google ou Esri. A chave do Google fica salva só neste navegador.</p>
 </section>
@@ -186,9 +192,9 @@ const PROV={
  google:{label:'Google Maps · satélite (Map Tiles API, requer chave)',maxZ:20,geoMax:17,proc:false,needsKey:true,attr:'Imagens © Google · Elevação: SRTM/AWS Terrain Tiles',
   urls:(z,x,y)=>[`https://tile.googleapis.com/v1/2dtiles/${z}/${x}/${y}?session=${encodeURIComponent(gSession)}&key=${encodeURIComponent(mapCfg.gkey)}`]}
 };
-const mapCfg=(()=>{const c={provider:'esri',gkey:'',date:defaultGibsDate,proc:true,bld:true};
+const mapCfg=(()=>{const c={provider:'esri',gkey:'',date:defaultGibsDate,proc:true,bld:true,poi:true};
  try{Object.assign(c,JSON.parse(localStorage.getItem(MAPKEY)||'{}'))}catch(error){console.warn('Configuração de mapa inválida; usando padrão.',error)}
- if(!PROV[c.provider])c.provider='esri';if(typeof c.proc!=='boolean')c.proc=true;if(typeof c.bld!=='boolean')c.bld=true;if(!/^\d{4}-\d{2}-\d{2}$/.test(c.date||''))c.date=defaultGibsDate;
+ if(!PROV[c.provider])c.provider='esri';if(typeof c.proc!=='boolean')c.proc=true;if(typeof c.bld!=='boolean')c.bld=true;if(typeof c.poi!=='boolean')c.poi=true;if(!/^\d{4}-\d{2}-\d{2}$/.test(c.date||''))c.date=defaultGibsDate;
  if(c.provider==='google'&&!c.gkey)c.provider='esri';return c})();
 
 // ---- fila de imagens
@@ -262,15 +268,15 @@ function setMapStatus(text){mapStatusEl.textContent=text}
 for(const [id,p] of Object.entries(PROV)){const o=document.createElement('option');o.value=id;o.textContent=p.label;mapProv.append(o)}
 const saveMap=()=>{try{localStorage.setItem(MAPKEY,JSON.stringify(mapCfg))}catch(error){console.warn('Não foi possível salvar a configuração do mapa.',error)}};
 function syncMapRows(){$('mapKeyRow').style.display=mapProv.value==='google'?'':'none';$('mapDateRow').style.display=mapProv.value==='nasa_modis'?'':'none'}
-function syncMapUi(){mapProv.value=mapCfg.provider;$('mapKey').value=mapCfg.gkey;$('mapDate').value=mapCfg.date;$('mapProc').checked=mapCfg.proc;$('mapBld').checked=mapCfg.bld;syncMapRows()}
-function openMap(open){mapPanel.style.display=open?'block':'none';if(open)syncMapUi()}
+function syncMapUi(){mapProv.value=mapCfg.provider;$('mapKey').value=mapCfg.gkey;$('mapDate').value=mapCfg.date;$('mapProc').checked=mapCfg.proc;$('mapBld').checked=mapCfg.bld;$('mapPoi').checked=mapCfg.poi;syncMapRows()}
+function openMap(open){mapPanel.style.display=open?'block':'none';if(open){syncMapUi();refreshCacheInfo()}}
 mapProv.addEventListener('change',()=>{$('mapProc').checked=PROV[mapProv.value].proc;syncMapRows()});
 function applyMap(){const id=mapProv.value,key=$('mapKey').value.trim();
  if(id==='google'&&!key){setMapStatus('Informe a chave da API (Map Tiles API ativada) para usar o Google.');return}
- mapCfg.provider=id;mapCfg.gkey=key;mapCfg.date=$('mapDate').value||mapCfg.date;mapCfg.proc=$('mapProc').checked;mapCfg.bld=$('mapBld').checked;saveMap();
- resetMap();imgOk=0;imgFail=0;AIRPORT.visible=mapCfg.proc&&hasRW;setBuildingsEnabled(mapCfg.bld);attribEl.textContent=mapAttr();gSessionState='idle';if(id==='google')startGoogle();setMapStatus('Carregando imagens…')}
+ mapCfg.provider=id;mapCfg.gkey=key;mapCfg.date=$('mapDate').value||mapCfg.date;mapCfg.proc=$('mapProc').checked;mapCfg.bld=$('mapBld').checked;mapCfg.poi=$('mapPoi').checked;saveMap();
+ resetMap();imgOk=0;imgFail=0;AIRPORT.visible=mapCfg.proc&&hasRW;setBuildingsEnabled(mapCfg.bld);setPoisEnabled(mapCfg.poi);attribEl.textContent=mapAttr();gSessionState='idle';if(id==='google')startGoogle();setMapStatus('Carregando imagens…')}
 $('mapBtn').addEventListener('click',()=>openMap(true));$('mapClose').addEventListener('click',()=>openMap(false));$('mapApply').addEventListener('click',applyMap);
-const mapAttr=()=>PROV[mapCfg.provider].attr+(mapCfg.bld?' · Prédios © colaboradores do OpenStreetMap':'');
+const mapAttr=()=>PROV[mapCfg.provider].attr+(mapCfg.bld||mapCfg.poi?' · '+(mapCfg.bld&&mapCfg.poi?'Prédios e locais':mapCfg.bld?'Prédios':'Locais')+' © colaboradores do OpenStreetMap':'');
 attribEl.textContent=mapAttr();if(mapCfg.provider==='google')startGoogle();
 
 // ================= aeroporto (pista 3D sobreposta, alinhada à pista 13/31 real) =================
@@ -349,7 +355,22 @@ function bCell(i,j){const k=i+':'+j;let c=bCells.get(k);if(!c){c={k,i,j,state:'n
 function dropCell(c){c.dead=true;if(c.mesh){bGroup.remove(c.mesh);c.mesh.geometry.dispose();c.mesh=null}if(c.state==='ready')bLoaded--;bTotal-=c.count;bCells.delete(c.k)}
 function clearBuildings(){for(const c of [...bCells.values()])dropCell(c);bTimer=0}
 function setBuildingsEnabled(on){bEnabled=on;bGroup.visible=on;if(!on)for(const c of [...bCells.values()])dropCell(c);bTimer=0}
-// cache local (Cache API): células já baixadas voltam instantaneamente ao revisitar a área
+// ---- armazenamento permanente (IndexedDB): tudo que for baixado do OpenStreetMap fica salvo no navegador e nunca é pedido de novo
+// Chaves: 'b2/i_j' = prédios, 'p1/i_j' = locais. Funciona também abrindo o arquivo direto do disco (file://), onde a Cache API não existe.
+const osmDB=(()=>{let dbp=null;
+ const open=()=>dbp||(dbp=new Promise(res=>{try{const rq=indexedDB.open('cessna172-osm',1);rq.onupgradeneeded=()=>rq.result.createObjectStore('blocks');rq.onsuccess=()=>res(rq.result);rq.onerror=()=>res(null);rq.onblocked=()=>res(null)}catch(error){res(null)}}));
+ const run=(mode,fn)=>open().then(db=>new Promise(res=>{if(!db)return res(null);try{const tx=db.transaction('blocks',mode),r=fn(tx.objectStore('blocks'));tx.oncomplete=()=>res(r&&r.result!==undefined?r.result:true);tx.onerror=tx.onabort=()=>res(null)}catch(error){res(null)}}));
+ return{get:k=>run('readonly',s=>s.get(k)),put:(k,txt)=>run('readwrite',s=>s.put({t:Date.now(),txt},k)),count:()=>run('readonly',s=>s.count()),clear:()=>run('readwrite',s=>s.clear())}})();
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(error){} // pede ao navegador para não apagar estes dados sozinho
+async function osmLoad(key,legacy,url){const rec=await osmDB.get(key);
+ if(rec&&rec.txt){try{return JSON.parse(rec.txt)}catch(error){}}
+ if(legacy){try{const hit=await legacy.match(url);if(hit){const txt=await hit.text(),j=JSON.parse(txt);if(j&&Array.isArray(j.elements)){osmDB.put(key,txt);return j}}}catch(error){}} // migra o cache antigo
+ return null}
+function refreshCacheInfo(){osmDB.count().then(n=>{$('mapCache').textContent=n?`Cache offline: ${n} áreas salvas (prédios e locais). Áreas já visitadas carregam sem nova consulta à internet.`:'Cache offline: vazio ou indisponível neste navegador. As áreas visitadas passam a ser salvas automaticamente.'})}
+$('mapCacheClear').addEventListener('click',async()=>{if(!confirm('Apagar todos os prédios e locais salvos neste navegador? Eles serão baixados de novo conforme você voar.'))return;
+ await osmDB.clear();try{if(window.caches){await caches.delete('cessna172-osm-bld-v1');await caches.delete('cessna172-osm-poi-v1')}}catch(error){}
+ bBlocks.clear();clearBuildings();clearPois();refreshCacheInfo()});
+// cache antigo (Cache API), mantido só para migrar o que já foi baixado
 let bCache=null,bRR=0;try{if(window.caches)caches.open('cessna172-osm-bld-v1').then(cc=>{bCache=cc}).catch(()=>{})}catch(error){}
 const bKey=bk=>'https://osm-cache.local/b2/'+bk.i+'_'+bk.j;
 function blockOf(c){const i=Math.floor(c.i/BBLK),j=Math.floor(c.j/BBLK),k=i+':'+j;let bk=bBlocks.get(k);if(!bk){bk={k,i,j,state:'idle',data:null,retry:0};bBlocks.set(k,bk)}return bk}
@@ -357,7 +378,7 @@ function assignCell(c,bk){c.els=(bk.data.get(c.k)||[]);c.idx=0;c.blk=null;c.stat
 // um pedido do Overpass cobre um bloco de BBLK x BBLK células; cada prédio vai para a célula do seu centro (sem duplicatas)
 async function fetchBlock(bk){bk.state='loading';bActive++;
  try{let j=null;
-  if(bCache){try{const hit=await bCache.match(bKey(bk));if(hit)j=await hit.json()}catch(error){j=null}}
+  j=await osmLoad('b2/'+bk.i+'_'+bk.j,bCache,bKey(bk));
   if(!j){
    const q=`[out:json][timeout:40];way["building"](${(bk.j*BBLK*BCELL).toFixed(5)},${(bk.i*BBLK*BCELL).toFixed(5)},${((bk.j+1)*BBLK*BCELL).toFixed(5)},${((bk.i+1)*BBLK*BCELL).toFixed(5)});out geom qt;`;
    // failover imediato: se um servidor estiver lento ou falhar, tenta o próximo sem esperar o ciclo de retentativa
@@ -365,11 +386,11 @@ async function fetchBlock(bk){bk.state='loading';bActive++;
    for(let k=0;k<2&&txt===null;k++){
     const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),k?30000:14000);
     try{const r=await fetch(OVERPASS[(bEp+bRR++)%OVERPASS.length],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl.signal});
-     if(!r.ok)throw new Error('HTTP '+r.status);txt=await r.text();j=JSON.parse(txt)}
+     if(!r.ok)throw new Error('HTTP '+r.status);txt=await r.text();j=JSON.parse(txt);if(!Array.isArray(j.elements)||(j.remark&&/error|timed out|out of memory/i.test(j.remark)))throw new Error('Overpass: resposta incompleta')}
     catch(error){lastErr=error;txt=null;j=null}
     finally{clearTimeout(tm)}}
    if(txt===null)throw lastErr||new Error('Overpass indisponível');
-   if(bCache&&j&&Array.isArray(j.elements))bCache.put(bKey(bk),new Response(txt,{headers:{'Content-Type':'application/json'}})).catch(()=>{})}
+   if(j&&Array.isArray(j.elements))osmDB.put('b2/'+bk.i+'_'+bk.j,txt)}
   const data=new Map(),i0=bk.i*BBLK,j0=bk.j*BBLK;
   for(const e of j.elements||[]){if(e.type!=='way'||!e.geometry||e.geometry.length<4)continue;
    let sl=0,sa=0;for(const q of e.geometry){sl+=q.lon;sa+=q.lat}sl/=e.geometry.length;sa/=e.geometry.length;
@@ -455,6 +476,104 @@ function hitBuilding(x,y,z){if(!bEnabled||!bGroup.visible)return false;
  for(const c of bCells.values()){if(c.state!=='ready'||x<c.x0-120||x>c.x1+120||z<c.z0-120||z>c.z1+120)continue;
   for(const b of c.boxes)if(x>b[0]&&x<b[1]&&z>b[2]&&z<b[3]&&y<b[4]&&y>b[5]-3&&inPoly(b[6],x,z))return b}
  return false}
+// ================= nomes de locais (OpenStreetMap) abaixo de 600 ft =================
+// Escolas, mercados, hospitais etc. aparecem como marcadores com nome sobre a imagem 3D quando a altura sobre o solo fica abaixo de POI_FT.
+// Os dados vêm do Overpass (mesma fonte dos prédios), em blocos de 0,02°, com cache local (Cache API).
+const POI_FT=600,POI_RAD=2500,POI_MAX=40,POI_BLK=.02,POI_FADE=80;
+const poiLayer=document.createElement('div');poiLayer.id='poiLayer';poiLayer.style.display='none';document.body.insertBefore(poiLayer,$('hud'));
+let poiEnabled=mapCfg.poi,poiActive=0,poiEp=0,poiRR=0,poiTimer=0,poiShown=false,poiSel=[],poiCache=null;
+const poiBlocks=new Map(),poiEls=[];
+try{if(window.caches)caches.open('cessna172-osm-poi-v1').then(cc=>{poiCache=cc}).catch(()=>{})}catch(error){}
+const POI_SEL=['["amenity"~"^(school|kindergarten|college|university|hospital|clinic|pharmacy|restaurant|fast_food|cafe|bar|bank|fuel|place_of_worship|police|fire_station|marketplace|cinema|theatre|library|post_office|townhall)$"]',
+ '["shop"]','["tourism"~"^(hotel|attraction|museum|viewpoint|zoo)$"]','["leisure"~"^(park|stadium|sports_centre)$"]'];
+// [ícone, cor, peso]: peso menor = mais importante (aparece primeiro quando há excesso de marcadores)
+function poiKind(t){const a=t.amenity,s=t.shop,u=t.tourism,l=t.leisure;
+ if(a==='school'||a==='kindergarten')return['🏫','#f5a300',.5];
+ if(a==='college'||a==='university')return['🎓','#f5a300',.5];
+ if(a==='hospital'||a==='clinic')return['🏥','#e53935',.5];
+ if(a==='pharmacy')return['💊','#2e9e44',.8];
+ if(s==='supermarket'||s==='mall'||s==='department_store'||a==='marketplace')return['🛒','#1e88e5',.5];
+ if(s==='convenience')return['🏪','#1e88e5',.9];
+ if(s)return['🛍️','#1e88e5',1.2];
+ if(a==='restaurant')return['🍽️','#fb8c00',1];
+ if(a==='fast_food')return['🍔','#fb8c00',1.2];
+ if(a==='cafe')return['☕','#8d6e63',1.2];
+ if(a==='bar')return['🍺','#fb8c00',1.2];
+ if(a==='bank')return['🏦','#5d6d7e',.9];
+ if(a==='fuel')return['⛽','#546e7a',.8];
+ if(a==='place_of_worship')return['⛪','#8e24aa',.8];
+ if(a==='police'||a==='fire_station')return['🚨','#3949ab',.7];
+ if(a==='cinema'||a==='theatre')return['🎭','#d81b60',.9];
+ if(a==='library')return['📚','#6d4c41',.9];
+ if(a==='post_office')return['📮','#5d6d7e',1];
+ if(a==='townhall')return['🏛️','#5d6d7e',.7];
+ if(u==='hotel')return['🏨','#00897b',.8];
+ if(u)return['📍','#00897b',.7];
+ if(l==='park')return['🌳','#2e7d32',.9];
+ if(l)return['🏟️','#2e7d32',.8];
+ return['📍','#757575',1.2]}
+const poiKey=bk=>'https://osm-cache.local/p1/'+bk.i+'_'+bk.j;
+async function fetchPoiBlock(bk){bk.state='loading';poiActive++;
+ try{let j=null;
+  j=await osmLoad('p1/'+bk.i+'_'+bk.j,poiCache,poiKey(bk));
+  if(!j){
+   const bb=`${(bk.j*POI_BLK).toFixed(5)},${(bk.i*POI_BLK).toFixed(5)},${((bk.j+1)*POI_BLK).toFixed(5)},${((bk.i+1)*POI_BLK).toFixed(5)}`,
+    q='[out:json][timeout:40];('+POI_SEL.map(s=>`nwr["name"]${s}(${bb});`).join('')+');out center tags qt;';
+   let txt=null,lastErr=null;
+   for(let k=0;k<2&&txt===null;k++){
+    const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),k?30000:14000);
+    try{const r=await fetch(OVERPASS[(poiEp+poiRR++)%OVERPASS.length],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl.signal});
+     if(!r.ok)throw new Error('HTTP '+r.status);txt=await r.text();j=JSON.parse(txt);if(!Array.isArray(j.elements)||(j.remark&&/error|timed out|out of memory/i.test(j.remark)))throw new Error('Overpass: resposta incompleta')}
+    catch(error){lastErr=error;txt=null;j=null}
+    finally{clearTimeout(tm)}}
+   if(txt===null)throw lastErr||new Error('Overpass indisponível');
+   if(j&&Array.isArray(j.elements))osmDB.put('p1/'+bk.i+'_'+bk.j,txt)}
+  const items=[],seen=new Set();
+  for(const e of j.elements||[]){const t=e.tags;if(!t||!t.name)continue;
+   const lat=e.lat!==undefined?e.lat:e.center&&e.center.lat,lon=e.lon!==undefined?e.lon:e.center&&e.center.lon;if(lat===undefined||lon===undefined)continue;
+   const dk=t.name+'|'+Math.round(lat*3000)+'|'+Math.round(lon*3000);if(seen.has(dk))continue;seen.add(dk);
+   const [icon,col,w]=poiKind(t),name=t.name.length>30?t.name.slice(0,29)+'…':t.name;
+   items.push({x:lonX(lon),z:latZ(lat),name,icon,col,w,y:0,yt:-1e9})}
+  bk.items=items;bk.state='ready'}
+ catch(error){bk.state='error';bk.retry=performance.now()+8000;console.warn('Overpass (locais) falhou:',error)}
+ finally{poiActive--}}
+function clearPois(){poiBlocks.clear();poiSel=[];poiTimer=0}
+function setPoisEnabled(on){poiEnabled=on;if(!on){poiSel=[];poiLayer.style.display='none';poiShown=false}poiTimer=0}
+// pede os blocos que tocam o círculo de raio POI_RAD em volta do avião (os mais próximos primeiro) e descarta os muito distantes
+function poiLoad(){const now=performance.now(),myy=MY0-P.z/KS,lon=(MX0+P.x/KS)/EARTH/D,lat=(2*Math.atan(Math.exp(myy/EARTH))-PI/2)/D,
+ mLat=111320,mLon=111320*Math.cos(lat*D),ci=Math.floor(lon/POI_BLK),cj=Math.floor(lat/POI_BLK),nI=Math.ceil(POI_RAD/(POI_BLK*mLon))+1,nJ=Math.ceil(POI_RAD/(POI_BLK*mLat))+1,want=[];
+ for(let dj=-nJ;dj<=nJ;dj++)for(let di=-nI;di<=nI;di++){const i=ci+di,j=cj+dj,
+   ex=Math.max(i*POI_BLK-lon,lon-(i+1)*POI_BLK,0)*mLon,ez=Math.max(j*POI_BLK-lat,lat-(j+1)*POI_BLK,0)*mLat,d=Math.hypot(ex,ez);
+   if(d>POI_RAD)continue;const k=i+':'+j;let bk=poiBlocks.get(k);if(!bk){bk={k,i,j,state:'idle',items:[],retry:0};poiBlocks.set(k,bk)}
+   if(bk.state==='idle'||(bk.state==='error'&&now>bk.retry))want.push([d,bk])}
+ want.sort((a,b)=>a[0]-b[0]);
+ for(const [,bk] of want){if(poiActive>=2)break;fetchPoiBlock(bk)}
+ for(const [k,bk] of poiBlocks){if(bk.state==='loading')continue;const bx=(bk.i+.5)*POI_BLK,bz=(bk.j+.5)*POI_BLK;if(Math.hypot((bx-lon)*mLon,(bz-lat)*mLat)>POI_RAD*5)poiBlocks.delete(k)}}
+// escolhe os candidatos: perto e (se o avião não olha pra baixo) à frente da câmera, ordenados por distância x importância
+function poiSelect(){const fw=new T.Vector3();cam.getWorldDirection(fw);const fl=Math.hypot(fw.x,fw.z),down=fl<.35,fx=fw.x/(fl||1),fz=fw.z/(fl||1),out=[];
+ for(const bk of poiBlocks.values()){if(bk.state!=='ready')continue;
+  for(const p of bk.items){const dx=p.x-P.x,dz=p.z-P.z,d=Math.hypot(dx,dz);if(d>POI_RAD||d<20)continue;
+   if(!down&&(dx*fx+dz*fz)/d<-.3)continue;out.push({p,d,s:d*p.w})}}
+ out.sort((a,b)=>a.s-b.s);poiSel=out.slice(0,110)}
+function poiEl(n){let el=poiEls[n];if(!el){el=document.createElement('div');el.className='poi';el.innerHTML='<i></i><span></span>';poiLayer.append(el);poiEls[n]=el}return el}
+const poiV=new T.Vector3();
+function poiLayout(op){const W=innerWidth,H=innerHeight,placed=[],now=performance.now();let n=0;cam.updateMatrixWorld();
+ for(const s of poiSel){if(n>=POI_MAX)break;const p=s.p;
+  if(now-p.yt>2000){p.y=GH(p.x,p.z)+14;p.yt=now}
+  poiV.set(p.x,p.y,p.z).project(cam);if(poiV.z<-1||poiV.z>1||Math.abs(poiV.x)>1.05||Math.abs(poiV.y)>1.05)continue;
+  const sx=(poiV.x+1)/2*W,sy=(1-poiV.y)/2*H,w=30+p.name.length*6.4,x0=sx-12,y0=sy-12;let hit=false;
+  for(const r of placed)if(x0<r[2]&&x0+w>r[0]&&y0<r[3]&&y0+24>r[1]){hit=true;break}
+  if(hit)continue;placed.push([x0,y0,x0+w,y0+24]);
+  const el=poiEl(n++);
+  if(el._p!==p){el._p=p;el.children[0].textContent=p.icon;el.children[0].style.background=p.col;el.children[1].textContent=p.name}
+  el.style.display='flex';el.style.opacity=(op*clamp(1.2-s.d/POI_RAD,.5,1)).toFixed(2);el.style.transform=`translate3d(${x0.toFixed(1)}px,${y0.toFixed(1)}px,0)`}
+ for(let k=n;k<poiEls.length;k++)if(poiEls[k].style.display!=='none'){poiEls[k].style.display='none';poiEls[k]._p=null}}
+function updatePois(dt,altFt){
+ const on=poiEnabled&&!crashed&&!tpPending&&mapReady,op=on?clamp((POI_FT-altFt)/POI_FADE,0,1):0;
+ if(on&&altFt<POI_FT*2.5){poiTimer-=dt;if(poiTimer<=0){poiTimer=.25;poiLoad();if(altFt<POI_FT)poiSelect()}}
+ if(op<=0){if(poiShown){poiLayer.style.display='none';poiShown=false}return}
+ if(!poiShown){poiLayer.style.display='block';poiShown=true}
+ poiLayout(op)}
 // ---- nuvens
 const cltx=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d'),g=x.createRadialGradient(64,64,4,64,64,62);g.addColorStop(0,'rgba(255,255,255,.95)');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(0,0,128,128);return new T.CanvasTexture(c)})();
 const cls=[];for(let i=0;i<40;i++){const cx=(rn()-.5)*36000,cz=(rn()-.5)*36000,cy0=1300+rn()*1100;for(let j=0;j<5;j++){const s=new T.Sprite(new T.SpriteMaterial({map:cltx,transparent:true,depthWrite:false,opacity:.9}));s.position.set(cx+(rn()-.5)*2200,cy0+(rn()-.5)*160,cz+(rn()-.5)*2200);const w=1300+rn()*1500;s.scale.set(w,w*.45,1);scn.add(s);cls.push(s)}}
@@ -1418,7 +1537,7 @@ const tpNote=(text)=>{ms.textContent=text;ms.style.display='block';setTimeout(()
 function tpBusy(text){mapLoading.textContent=text;mapLoading.style.display='block'}
 function setOrigin(lat,lon){ // re-centra o mundo: tudo que está em coordenadas de mundo (terreno, prédios, pista) é refeito
  GEO.lat0=lat;GEO.lon0=lon;KS=Math.cos(lat*D);MX0=lon*D*EARTH;MY0=Math.log(Math.tan(PI/4+lat*D/2))*EARTH;
- clearRunway();resetMap();clearBuildings();imgOk=0;imgFail=0;ringKeys[11]=ringKeys[8]=null;P.set(0,3000,0);V.set(0,0,0);W.set(0,0,0)}
+ clearRunway();resetMap();clearBuildings();clearPois();imgOk=0;imgFail=0;ringKeys[11]=ringKeys[8]=null;P.set(0,3000,0);V.set(0,0,0);W.set(0,0,0)}
 async function overpassJson(q,ms_){for(let k=0;k<OVERPASS.length;k++){
   try{const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),ms_);
    const r=await fetch(OVERPASS[(bEp+k)%OVERPASS.length],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctl.signal});clearTimeout(tm);
@@ -1565,6 +1684,7 @@ function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/
  if(fr%2==0){panel(d);if(cessnaModelLoaded)updateCockpitInstrumentDisplays();if(!cockpit)flightCtx.drawImage(pc,0,0)}
  if(fr++%8==0)hu.textContent=`IAS ${d.kt.toFixed(0).padStart(3)} kt   ALT ${d.ft.toFixed(0)} ft   VS ${d.vs.toFixed(0)} fpm\nHDG ${d.hdg.toFixed(0).padStart(3,'0')}°   PITCH ${d.pitch.toFixed(0)}°   AoA ${d.aoa.toFixed(1)}°\nBANK ${(d.bank/D).toFixed(0)}°   MOTOR ${d.rpm.toFixed(0)} RPM   FLAPS ${ct.fl}°\n${ct.pk?'FREIO DE ESTACION.':''}${I.warn?'\n⚠ ALARME DE STALL':''}${fuel<=0?'\n⚠ SEM COMBUSTÍVEL':''}`;
  if(ac){eo.frequency.value=35+ct.th*60;eg.gain.value=fuel>0&&!crashed?.05+.08*ct.th:0;hn.g.gain.value=I.warn&&!crashed?.03:0}
+ updatePois(dt,alt*3.281);
  ren.render(scn,cam)}
 reset();requestAnimationFrame(loop);
 </script></body></html>
