@@ -386,7 +386,7 @@ function addBuilding(c,el,minAr){
  const PA=geo.attributes.position.array,NA=geo.attributes.normal.array,UA=geo.attributes.uv.array,base=GH(cx,cz)-.3;
  for(let v=0;v<PA.length;v+=3){c.pos.push(PA[v]+cx,PA[v+1]+base,PA[v+2]+cz);const ny=NA[v+1],flat=Math.abs(ny)>.9,s=ny>.9?1.1:ny<-.9?.5:1,u=v/3*2;c.nor.push(NA[v],ny,NA[v+2]);c.col.push(col[0]*s,col[1]*s,col[2]*s);c.uv.push(flat?.06:UA[u],flat?.06:UA[u+1])}
  geo.dispose();
- const sx=(mxx-mnx)*.12,sz=(mxz-mnz)*.12;c.boxes.push([mnx+sx,mxx-sx,mnz+sz,mxz-sz,base+.3+h,base]);c.count++;bTotal++}
+ const poly=[];for(const q of pts)poly.push(q[0],q[1]);c.boxes.push([mnx,mxx,mnz,mxz,base+.3+h,base,poly]);c.count++;bTotal++}
 function finishCell(c){
  if(c.pos.length){const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(c.pos,3));g.setAttribute('normal',new T.Float32BufferAttribute(c.nor,3));g.setAttribute('color',new T.Float32BufferAttribute(c.col,3));g.setAttribute('uv',new T.Float32BufferAttribute(c.uv,2));g.computeBoundingSphere();
   const mesh=new T.Mesh(g,bMat);mesh.castShadow=true;mesh.receiveShadow=true;bGroup.add(mesh);c.mesh=mesh}
@@ -419,7 +419,7 @@ function updateBuildings(dt){
  for(const c of cand){if(bActive>=BMAXACT||queued+bActive>=BMAXQ)break;fetchBuildings(c)}}
 function hitBuilding(x,y,z){if(!bEnabled||!bGroup.visible)return false;
  for(const c of bCells.values()){if(c.state!=='ready'||x<c.x0||x>c.x1||z<c.z0||z>c.z1)continue;
-  for(const b of c.boxes)if(x>b[0]&&x<b[1]&&z>b[2]&&z<b[3]&&y<b[4])return b}
+  for(const b of c.boxes)if(x>b[0]&&x<b[1]&&z>b[2]&&z<b[3]&&y<b[4]&&y>b[5]-3&&inPoly(b[6],x,z))return b}
  return false}
 // ---- nuvens
 const cltx=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d'),g=x.createRadialGradient(64,64,4,64,64,62);g.addColorStop(0,'rgba(255,255,255,.95)');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(0,0,128,128);return new T.CanvasTexture(c)})();
@@ -1154,7 +1154,7 @@ function stepFires(dt){
   f.fl.forEach((o,j)=>{const w=f.t*(9+j*3)+f.ph+j*2.1,fk=1+.22*Math.sin(w)+.12*Math.sin(w*2.3),sz=s*(1.6-.35*j)*fk;
    o.position.set(p.x+Math.sin(w*.7)*s*.15,p.y+s*(.3+.25*j)*fk,p.z+Math.cos(w*.6)*s*.15);o.scale.set(sz,sz*1.3,1)});
   const c=(f.t*.35+f.ph/6.28)%1;f.smoke.position.set(p.x+Math.sin(f.t+f.ph)*s*c,p.y+s*(.8+c*5),p.z);f.smoke.scale.setScalar(s*(1.2+c*3.5));f.smoke.material.opacity=.45*(1-c)*k}}
-function clearDebris(){for(const o of scorches){scn.remove(o);o.geometry.dispose()}scorches.length=0;for(const b of debris){scn.remove(b.body);if(b.mats)b.mats.forEach(m=>m.dispose())}clearFires();debris.length=0;debrisMain=null}
+function clearDebris(){clearSmoke();for(const o of scorches){scn.remove(o);o.geometry.dispose()}scorches.length=0;for(const b of debris){scn.remove(b.body);if(b.mats)b.mats.forEach(m=>m.dispose())}clearFires();debris.length=0;debrisMain=null}
 function breakApart(v0,w0){
  AC.position.copy(P);AC.quaternion.copy(Qt);AC.updateMatrixWorld(true);
  const wWorld=w0.clone().applyQuaternion(Qt),speed=v0.length(),parts=[];
@@ -1182,7 +1182,7 @@ function stepDebris(dt){
   const p=b.body.position,q=b.body.quaternion;
   b.v.y-=g*h;b.v.multiplyScalar(1-b.drag*h);p.addScaledVector(b.v,h);
   dbQ.set(b.w.x,b.w.y,b.w.z,0).multiply(q);q.set(q.x+dbQ.x*.5*h,q.y+dbQ.y*.5*h,q.z+dbQ.z*.5*h,q.w+dbQ.w*.5*h).normalize();
-  const gh=GH(p.x,p.z)+.05;if(p.y-b.rb>gh+.3)continue; // longe do chão: só voa
+  collideBuildings(b);if(b.sleep)continue;const gh=GH(p.x,p.z)+.05;if(p.y-b.rb>gh+.3)continue; // longe do chão: só voa
   const nx=(GH(p.x-1.5,p.z)-GH(p.x+1.5,p.z))/3,nz=(GH(p.x,p.z-1.5)-GH(p.x,p.z+1.5))/3;dbN.set(nx,1,nz).normalize();
   let pen=0;
   for(let it=0;it<2;it++)for(const cn of b.corners){
@@ -1200,29 +1200,90 @@ const scorches=[];
 function fireAt(pos,s,life){const spr=mt=>{const o=new T.Sprite(mt);scn.add(o);return o},fl=[0,1,2].map(()=>spr(flameMat)),
  smoke=spr(new T.SpriteMaterial({map:smokeTex,transparent:true,opacity:.4,depthWrite:false,fog:false}));
  fires.push({b:{body:{position:pos.clone()},rb:s},s,life,t:0,ph:rn()*6.28,fl,smoke})}
+// ---- geometria dos prédios: ponto dentro do contorno real, aresta mais próxima
+const _pp={x:0,z:0,d:0};
+function inPoly(poly,x,z){if(!poly)return true;let ins=false;const n=poly.length/2;
+ for(let i=0,j=n-1;i<n;j=i++){const xi=poly[i*2],zi=poly[i*2+1],xj=poly[j*2],zj=poly[j*2+1];
+  if((zi>z)!==(zj>z)&&x<(xj-xi)*(z-zi)/(zj-zi)+xi)ins=!ins}
+ return ins}
+function nearestEdge(poly,x,z){let best=1e18,bx=x,bz=z;const n=poly.length/2;
+ for(let i=0;i<n;i++){const j=(i+1)%n,ax=poly[i*2],az=poly[i*2+1],ex=poly[j*2]-ax,ez=poly[j*2+1]-az,l2=ex*ex+ez*ez||1,
+   t=clamp(((x-ax)*ex+(z-az)*ez)/l2,0,1),qx=ax+ex*t,qz=az+ez*t,d=(qx-x)*(qx-x)+(qz-z)*(qz-z);
+  if(d<best){best=d;bx=qx;bz=qz}}
+ _pp.x=bx;_pp.z=bz;_pp.d=Math.sqrt(best)}
+// prédios próximos ao acidente: os destroços colidem com eles
+const nearBoxes=[];
+function buildNearBoxes(){nearBoxes.length=0;if(!bEnabled)return;const R=160;
+ for(const c of bCells.values()){if(c.state!=='ready'||c.x1<P.x-R||c.x0>P.x+R||c.z1<P.z-R||c.z0>P.z+R)continue;
+  for(const b of c.boxes)if(b[1]>P.x-R&&b[0]<P.x+R&&b[3]>P.z-R&&b[2]<P.z+R)nearBoxes.push(b)}}
+// afasta a aeronave de dentro do prédio (o avião para exatamente na parede)
+const BO_PTS=[[0,.1,-2.6],[0,.2,5.8],[5.5,.92,-.5],[-5.5,.92,-.5],[0,.5,0],[5.4,.95,-1.15],[-5.4,.95,-1.15],[0,-1.1,-1.4],[1.35,-1.15,.3],[-1.35,-1.15,.3],[1.7,.24,5.1],[-1.7,.24,5.1],[.5,0,-2.3],[-.5,0,-2.3],[0,1.55,5],[0,.9,-1]];
+function planeInBuilding(){const w=new T.Vector3();for(const a of BO_PTS){w.set(a[0],a[1],a[2]).applyQuaternion(Qt).add(P);if(hitBuilding(w.x,w.y,w.z))return true}return false}
+function backOffPlane(v0){const d=v0.lengthSq()>.25?v0.clone().normalize().negate():new T.Vector3(0,1,0);
+ for(let i=0;i<120&&planeInBuilding();i++)P.addScaledVector(d,.25);
+ P.addScaledVector(d,.1)}
+// colisão dos destroços com as paredes e o telhado (contorno real do prédio)
+function collideBuildings(b){if(!nearBoxes.length)return;const p=b.body.position,q=b.body.quaternion;
+ for(const bx of nearBoxes){
+  if(p.x<bx[0]-b.rb||p.x>bx[1]+b.rb||p.z<bx[2]-b.rb||p.z>bx[3]+b.rb||p.y-b.rb>bx[4])continue;
+  for(const cn of b.corners){
+   dbR.copy(cn).applyQuaternion(q);const wx=p.x+dbR.x,wy=p.y+dbR.y,wz=p.z+dbR.z;
+   if(wx<=bx[0]||wx>=bx[1]||wz<=bx[2]||wz>=bx[3]||wy>=bx[4]||wy<bx[5]-1||!inPoly(bx[6],wx,wz))continue;
+   nearestEdge(bx[6],wx,wz);const dyt=bx[4]-wy;
+   if(dyt<_pp.d){p.y+=dyt+.01;dbN.set(0,1,0)}
+   else if(_pp.d>1e-6){const nx=(_pp.x-wx)/_pp.d,nz=(_pp.z-wz)/_pp.d;p.x+=nx*(_pp.d+.02);p.z+=nz*(_pp.d+.02);dbN.set(nx,0,nz)}
+   else continue;
+   const vn=b.v.dot(dbN);if(vn<0)b.v.addScaledVector(dbN,-1.25*vn);b.v.multiplyScalar(.96);b.w.multiplyScalar(.92);
+   if(dbN.y===1&&b.v.lengthSq()<.6&&b.w.lengthSq()<2){b.sleep=true;b.v.set(0,0,0);b.w.set(0,0,0)}}}}
+// ---- colunas de fumaça persistentes
+const smokeEmitters=[];
+function addSmoke(pos,size,life){const sp=[];
+ for(let i=0;i<22;i++){const o=new T.Sprite(new T.SpriteMaterial({map:smokeTex,transparent:true,opacity:0,depthWrite:false,fog:false}));scn.add(o);sp.push({o,ph:i/22})}
+ smokeEmitters.push({pos:pos.clone(),size,life,t:0,sp,seed:rn()*6.28})}
+function removeSmoke(e){for(const s of e.sp){scn.remove(s.o);s.o.material.dispose()}}
+function clearSmoke(){smokeEmitters.forEach(removeSmoke);smokeEmitters.length=0}
+function stepSmoke(dt){
+ for(let i=smokeEmitters.length-1;i>=0;i--){const e=smokeEmitters[i];e.t+=dt;
+  if(e.t>=e.life){removeSmoke(e);smokeEmitters.splice(i,1);continue}
+  const k=clamp((e.life-e.t)/12,0,1),H=e.size*16;
+  for(const s of e.sp){const u=(e.t*.09+s.ph)%1,sw=Math.sin(e.t*.6+s.ph*25+e.seed)*e.size*.35*u;
+   s.o.position.set(e.pos.x+.85*u*u*H*.7+sw,e.pos.y+u*H,e.pos.z+.35*u*u*H*.7-sw*.6);
+   const sc=e.size*(1.4+u*5.5);s.o.scale.set(sc,sc,1);s.o.material.opacity=.55*k*Math.min(1,u*8)*Math.pow(1-u,1.1)}}}
+// ---- cacos irregulares de concreto
+const chunkMats=[0x9a968c,0x77746d,0xb3ada0,0x5f5c57].map(c=>new T.MeshLambertMaterial({color:c}));
+function shardGeo(r){const g=new T.IcosahedronGeometry(r,0),pa=g.attributes.position.array,seed=rn()*100;
+ for(let i=0;i<pa.length;i+=3){const x=pa[i],y=pa[i+1],z=pa[i+2],kk=Math.sin(x*127.1/r+y*311.7/r+z*74.7/r+seed)*43758.5453,f=.5+(kk-Math.floor(kk))*.95;pa[i]*=f;pa[i+1]*=f;pa[i+2]*=f}
+ g.scale(.6+rn()*.9,.4+rn()*.9,.6+rn()*.9);g.computeVertexNormals();g.computeBoundingBox();return g}
 function hitBuildingFx(b,hit,speed){
- const cx=(b[0]+b[1])/2,cz=(b[2]+b[3])/2,top=b[4],base=b[5]!==undefined?b[5]:top-10,
-  out=new T.Vector3(hit.x-cx,0,hit.z-cz);if(out.lengthSq()<1e-4)out.set(0,0,1);out.normalize();
- const hy=clamp(hit.y,base+1,top);
- // massa carbonizada no ponto de impacto
+ const top=b[4],base=b[5],poly=b[6];
+ nearestEdge(poly,hit.x,hit.z);
+ const out=new T.Vector3();let hx,hy,hz;
+ if(top-hit.y<_pp.d){hx=hit.x;hy=top;hz=hit.z;out.set(rn()-.5,0,rn()-.5);if(out.lengthSq()<1e-6)out.set(0,0,1);out.normalize()} // impacto no telhado
+ else{out.set(_pp.x-hit.x,0,_pp.z-hit.z);if(out.lengthSq()<1e-8)out.set(0,0,1);out.normalize();hx=_pp.x+out.x*.6;hz=_pp.z+out.z*.6;hy=clamp(hit.y,base+1,top)}
+ const tg=new T.Vector3(-out.z,0,out.x);
+ // marca carbonizada
  const burnMat=new T.MeshLambertMaterial({color:0x151412});
- for(let i=0;i<4;i++){const s=2.5+rn()*4,o=new T.Mesh(new T.BoxGeometry(s,s*(.7+rn()*.5),s),burnMat);
-  o.position.set(hit.x+(rn()-.5)*5,clamp(hy+(rn()-.5)*5,base+1,top),hit.z+(rn()-.5)*5);o.rotation.set(rn(),rn(),rn());scn.add(o);scorches.push(o)}
- // incêndio no prédio: no impacto, acima dele e no telhado
- for(let i=0;i<6;i++)fireAt(new T.Vector3(hit.x+(rn()-.5)*7,clamp(hy+(rn()-.3)*8,base+1,top+4),hit.z+(rn()-.5)*7),4+rn()*3.5,100+rn()*80);
- const roofSpan=Math.min(b[1]-b[0],b[3]-b[2])*.35;
- if(top-hy<45)for(let i=0;i<3;i++)fireAt(new T.Vector3(cx+(rn()-.5)*roofSpan,top+1,cz+(rn()-.5)*roofSpan),5+rn()*4,100+rn()*80);
- // pedaços do prédio
- const n=clamp(Math.round(14+speed*.3),14,40);
- for(let i=0;i<n;i++){const sx=.6+rn()*2.2,sy=.5+rn()*1.8,sz=.6+rn()*2.2,
-   part=new T.Mesh(new T.BoxGeometry(sx,sy,sz),new T.MeshLambertMaterial({color:new T.Color().setHSL(.1,.05,.4+rn()*.3)})),body=new T.Group();
+ for(let i=0;i<5;i++){const s=1+rn()*2.4,o=new T.Mesh(new T.BoxGeometry(s*(.8+rn()*.8),s*(.6+rn()*.8),s*.6),burnMat);
+  o.position.set(hx-out.x*.2+tg.x*(rn()-.5)*5,clamp(hy+(rn()-.5)*5,base+1,top+.3),hz-out.z*.2+tg.z*(rn()-.5)*5);o.rotation.set(rn()*.6,Math.atan2(out.x,out.z)+(rn()-.5)*.6,rn()*.6);scn.add(o);scorches.push(o)}
+ // fogo e fumaça no impacto
+ for(let i=0;i<6;i++){const a=(rn()-.5)*8,u=(rn()-.3)*7;fireAt(new T.Vector3(hx+tg.x*a+out.x*.5,clamp(hy+u,base+1,top+3),hz+tg.z*a+out.z*.5),4+rn()*3.5,100+rn()*80)}
+ addSmoke(new T.Vector3(hx+out.x,hy+1.5,hz+out.z),6.5,170);addSmoke(new T.Vector3(hx+out.x*2+tg.x*3,hy+4,hz+out.z*2+tg.z*3),5,150);
+ // telhado em chamas (centroide do contorno)
+ if(top-hy<50){let cx=0,cz=0;const n=poly.length/2;for(let i=0;i<n;i++){cx+=poly[i*2];cz+=poly[i*2+1]}cx/=n;cz/=n;
+  for(let i=0;i<3;i++)fireAt(new T.Vector3(cx+(rn()-.5)*4,top+1,cz+(rn()-.5)*4),5+rn()*4,100+rn()*80);
+  addSmoke(new T.Vector3(cx,top+2,cz),6,160)}
+ // cacos menores e irregulares
+ const n=clamp(Math.round(45+speed*.5),45,95);
+ for(let i=0;i<n;i++){const r=.14+rn()*rn()*.75,geo=shardGeo(r),part=new T.Mesh(geo,chunkMats[i%chunkMats.length]),body=new T.Group(),bb_=geo.boundingBox;
   part.castShadow=true;body.add(part);
-  body.position.set(hit.x+(rn()-.5)*6,clamp(hy+(rn()-.5)*6,base+1,top+1),hit.z+(rn()-.5)*6);body.quaternion.setFromEuler(new T.Euler(rn()*6,rn()*6,rn()*6));
-  const corners=[];for(let k=0;k<8;k++)corners.push(new T.Vector3(k&1?sx/2:-sx/2,k&2?sy/2:-sy/2,k&4?sz/2:-sz/2));
-  const bb={body,corners,rb:Math.hypot(sx,sy,sz)/2,
-   v:out.clone().multiplyScalar(2+rn()*(4+speed*.12)).add(new T.Vector3((rn()-.5)*4,rn()*4+1,(rn()-.5)*4)),
-   w:new T.Vector3(rn()-.5,rn()-.5,rn()-.5).multiplyScalar(6),inertia:(sx*sx+sy*sy+sz*sz)/12,drag:.05,rest:0,sleep:false};
-  debris.push(bb);scn.add(body);if(rn()<.4)ignite(bb,part)}}
+  body.position.set(hx+out.x*(.3+rn()*1.2)+tg.x*(rn()-.5)*8,clamp(hy+(rn()-.5)*8,base+.5,top+.8),hz+out.z*(.3+rn()*1.2)+tg.z*(rn()-.5)*8);
+  body.quaternion.setFromEuler(new T.Euler(rn()*6,rn()*6,rn()*6));
+  const corners=[];let ex=0,ey=0,ez=0;
+  for(let k=0;k<8;k++){const c=new T.Vector3(k&1?bb_.max.x:bb_.min.x,k&2?bb_.max.y:bb_.min.y,k&4?bb_.max.z:bb_.min.z);corners.push(c);ex=Math.max(ex,Math.abs(c.x));ey=Math.max(ey,Math.abs(c.y));ez=Math.max(ez,Math.abs(c.z))}
+  const bb={body,corners,rb:Math.hypot(ex,ey,ez),
+   v:out.clone().multiplyScalar(1+rn()*(2+speed*.05)).addScaledVector(tg,(rn()-.5)*3).add(new T.Vector3(0,rn()*2.5,0)),
+   w:new T.Vector3(rn()-.5,rn()-.5,rn()-.5).multiplyScalar(9),inertia:Math.max(1e-6,(ex*ex+ey*ey+ez*ez)/3),drag:.05,rest:0,sleep:false};
+  debris.push(bb);scn.add(body);if(rn()<.2)ignite(bb,part)}}
 /*DESTROCOS-FIM*/
 let checkpoint=0,courseLaps=0;
 function updateMission(text){mission.textContent=text||`Portão ${checkpoint+1}/3 · voe pelo centro do arco verde → vermelho`}
@@ -1240,7 +1301,7 @@ function awardGate(previous){if(checkpoint>=gates.length)return;const gate=gates
  else updateMission(`Portão atravessado · +${formatMoney(200)} · próximo: ${checkpoint+1}/3`);
  persistProfile();updateMoney()}
 function crash(bld,hit){if(crashed)return;crashed=true;const v0=V.clone(),w0=W.clone(),sp0=v0.length();V.set(0,0,0);W.set(0,0,0);
- if(bld){v0.multiplyScalar(-.05);w0.multiplyScalar(.15)} // contra prédio: a aeronave para (quica de leve para trás)
+ if(bld){backOffPlane(v0);v0.multiplyScalar(-.02);w0.multiplyScalar(.08);buildNearBoxes()} // contra prédio: a aeronave para (quica de leve para trás)
  breakApart(v0,w0);if(bld)hitBuildingFx(bld,hit,sp0);boom(sp0);deathTime=0;deathCameraStart.copy(cam.position);deathScreen.classList.add('active');deathScreen.setAttribute('aria-hidden','false')}
 function reset(){if(!hasRW){startAirborne(lastYaw);return}clearDebris();{const st=apt(0,RW.len/2-110);P.set(st.x,RW.elev+1.2,st.z)}V.set(0,0,0);W.set(0,0,0);Qt.setFromAxisAngle(new T.Vector3(0,1,0),-RW.hdg*D);cq.copy(Qt);Object.assign(ct,{e:0,a:0,r:0,th:0,fl:0,fa:0,tr:0,br:0,pk:1});separation=0;simTime=0;I={sp:0,rho:1.225,al:0,be:0,warn:0,separation:0};crashed=false;fuel=.92;engT=110;checkpoint=0;
  layoutStartGates();updateMission();ms.style.display='none';deathTime=0;deathScreen.classList.remove('active');deathScreen.setAttribute('aria-hidden','true')}
@@ -1273,7 +1334,8 @@ function step(dt){
   fw.y=0;rt.y=0;fw.normalize();rt.normalize();
   const vf=vp.dot(fw),vs=vp.dot(rt),mu=.025+(gr[3]?0:.7*Math.max(ct.br,ct.pk)),Fs=-clamp(8e3*vs,-Nf,Nf),Ff=-clamp(6e3*vf,-mu*Nf,mu*Nf);
   const fg=new T.Vector3(Fs*rt.x+Ff*fw.x,Nf,Fs*rt.z+Ff*fw.z);Fw.add(fg);tw.add(new T.Vector3().crossVectors(rl,fg))});
- [[0,.1,-2.6],[0,.2,5.8],[5.5,.92,-.5],[-5.5,.92,-.5],[0,.5,0]].forEach(a=>{const w=new T.Vector3(...a).applyQuaternion(Qt).add(P);const hb=hitBuilding(w.x,w.y,w.z);if(hb)crash(hb,w);else if(w.y<GH(w.x,w.z)+.05)crash()});
+ [[0,.1,-2.6],[0,.2,5.8],[5.5,.92,-.5],[-5.5,.92,-.5],[0,.5,0]].forEach(a=>{const w=new T.Vector3(...a).applyQuaternion(Qt).add(P);if(w.y<GH(w.x,w.z)+.05)crash()});
+ if(!crashed)for(const a of BO_PTS){const w=new T.Vector3(...a).applyQuaternion(Qt).add(P),hb=hitBuilding(w.x,w.y,w.z);if(hb){crash(hb,w);break}}
  if(crashed)return;
  V.addScaledVector(Fw,dt/m);P.addScaledVector(V,dt);awardGate(previous);
  tau.add(tw.applyQuaternion(iq));W.x+=tau.x/Iyy*dt;W.y+=tau.y/Izz*dt;W.z+=tau.z/Ixx*dt;
@@ -1430,7 +1492,7 @@ function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/
  document.body.classList.toggle('cockpit',cockpit);
  if(paused||crashed)acc=0;else{ctl(dt);acc+=dt;while(acc>=1/120){step(1/120);acc-=1/120}
   fuel=Math.max(0,fuel-dt*(.00003+.00035*ct.th*(1+.12*profile.upgrades.engine)*(fuel>0?1:0)));engT+=((fuel>0?120+ct.th*70*(1+.12*profile.upgrades.engine):50)-engT)*Math.min(1,dt*.05)}
- if(debris.length&&!paused){stepDebris(dt);stepFires(dt)}updateCessnaControls();updateTerrain(dt);updateBuildings(dt);AC.position.copy(P);AC.quaternion.copy(Qt);
+ if(debris.length&&!paused){stepDebris(dt);stepFires(dt)}stepSmoke(dt);updateCessnaControls();updateTerrain(dt);updateBuildings(dt);AC.position.copy(P);AC.quaternion.copy(Qt);
  const animDt=crashed?dt*.25:dt;
  // superfícies de comando
  FL.rotation.x=FR.rotation.x=ct.fa*D;AR.rotation.x=-ct.a*.17;AL.rotation.x=ct.a*.17;EL.rotation.x=-(ct.e*.14+ct.tr*.07);RU.rotation.y=ct.r*.22;
