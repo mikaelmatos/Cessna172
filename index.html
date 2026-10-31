@@ -725,13 +725,21 @@ const GA={asi:[130,150,100],ai:[355,150,100],alt:[580,150,100],tc:[130,385,100],
  oil:[1265,90,56],egt:[1405,90,56],fl:[1265,215,56],fr:[1405,215,56],amp:[1265,340,56],vac:[1405,340,56]};
 // layout em coordenadas de TELA (sx: 0 = esquerda do painel, 1 = direita; sy: 0 = embaixo, 1 = em cima), visto pelo piloto.
 // Esquerda: relógio + "seis pacotes" (ASI/AI/ALT em cima, TC/DG/VSI embaixo) na frente do piloto; centro: tacômetro; direita: grade de motor/combustível.
-const cockpitInstrumentLayout=[
- ['clk',.047,.82,.027],
- ['asi',.155,.82,.036],['ai',.258,.82,.036],['alt',.361,.82,.036],
- ['tc',.155,.54,.036],['dg',.258,.54,.036],['vsi',.361,.54,.036],
- ['tach',.485,.82,.036],
- ['oil',.790,.82,.029],['egt',.885,.82,.029],['amp',.975,.82,.029],
- ['vac',.790,.52,.029],['fl',.885,.52,.029],['fr',.975,.52,.029]
+const cockpitInstrumentLayout=[ // [instrumento, sx, sy, raio, dR, dU] — dR/dU: ajuste fino (unidades do modelo, direita/cima) para centralizar cada mostrador no seu anel
+ ['clk',0.047,0.82,0.0265,0.0196,0.0099],
+ ['asi',0.155,0.82,0.0351,0.0006,0.0193],
+ ['ai',0.258,0.82,0.0351,-0.0003,0.0211],
+ ['alt',0.361,0.82,0.0351,-0.0003,0.0219],
+ ['tc',0.155,0.54,0.0371,0.0025,0.0069],
+ ['dg',0.258,0.54,0.0377,0.0025,0.0079],
+ ['vsi',0.361,0.54,0.0351,-0.0013,0.0092],
+ ['tach',0.485,0.82,0.0366,-0.0165,0.0220],
+ ['oil',0.79,0.82,0.0358,0.0107,0.0218],
+ ['egt',0.885,0.82,0.0333,0.0195,0.0203],
+ ['amp',0.975,0.82,0.0333,0.0207,0.0219],
+ ['vac',0.79,0.52,0.0312,0.0068,0.0199],
+ ['fl',0.885,0.52,0.0312,0.0072,0.0203],
+ ['fr',0.975,0.52,0.0312,0.0076,0.0216]
 ];
 const cockpitInstrumentDisplays=[];
 function createCockpitInstrumentDisplays(aircraft,meter){
@@ -768,11 +776,11 @@ function createCockpitInstrumentDisplays(aircraft,meter){
   panelN=new T.Vector3(0,1,0),panelU=Math.abs(upL.x)>Math.abs(upL.z)?new T.Vector3(Math.sign(upL.x),0,0):new T.Vector3(0,0,Math.sign(upL.z)||1),
   panelR=new T.Vector3().crossVectors(panelU,panelN),faceBasis=new T.Matrix4().makeBasis(panelR,panelU,panelN),
   panelC=bounds.getCenter(new T.Vector3()),extR=Math.abs(panelR.x)>.5?size.x:size.z,extU=Math.abs(panelU.x)>.5?size.x:size.z;
- cockpitInstrumentLayout.forEach(([name,sx,sy,radius])=>{
+ cockpitInstrumentLayout.forEach(([name,sx,sy,radius,dR=0,dU=0])=>{
   const [cx,cy_,sourceRadius]=GA[name],cropRadius=sourceRadius+6,canvas=cv(256,256),context=canvas.getContext('2d');
   const texture=new T.CanvasTexture(canvas);texture.encoding=T.sRGBEncoding;texture.anisotropy=ren.capabilities.getMaxAnisotropy();
   const face=new T.Mesh(new T.CircleGeometry(radius,40).applyMatrix4(faceBasis),new T.MeshBasicMaterial({map:texture,transparent:true,side:T.DoubleSide,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3}));
-  face.position.copy(panelC).addScaledVector(panelR,(sx-.5)*extR).addScaledVector(panelU,(sy-.5)*extU);face.position.y=front;displayGroup.add(face);
+  face.position.copy(panelC).addScaledVector(panelR,(sx-.5)*extR+dR).addScaledVector(panelU,(sy-.5)*extU+dU);face.position.y=front;displayGroup.add(face);
   cockpitInstrumentDisplays.push({name,cx,cy:cy_,cropRadius,canvas,context,texture})
  })
 }
